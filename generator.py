@@ -1,6 +1,11 @@
 import xml.etree.ElementTree as ET
+import os
 
-tree = ET.parse('/Users/yuangzhou/hadoop/hadoop/codeql-custom-queries-java/hdfs-default.xml')
+current_dir = os.getcwd()
+
+xml_path = os.path.join(current_dir,"hdfs-default.xml")
+
+tree = ET.parse(xml_path)
 root = tree.getroot()
 
 params = set()
