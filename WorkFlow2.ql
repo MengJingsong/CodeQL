@@ -6,7 +6,7 @@ where
     //bexpr.getEnclosingCallable().getEnclosingCallable() = c.getACallable() and
     //assign.getDest() = field and
 
-    exists(MethodCall call, int index,AssignExpr aexpr|
+    exists(MethodCall call, int index, AssignExpr aexpr|
       aexpr = expr1.getParent*() and
       expr1 = call.getArgument(index) and
       expr1.toString().matches("%IPC_MAXIMUM_RESPONSE_LENGTH") and
@@ -15,9 +15,9 @@ where
     ) 
     and
     ( 
-      // 
-      bexpr.getRightOperand().toString() = expr2.toString().regexpCapture("this.(\\w+)",1) or
-      bexpr.getLeftOperand().toString() = expr2.toString().regexpCapture("this.(\\w+)",1)
+      // 先右边
+      bexpr.getRightOperand().toString() = expr2.toString().regexpCapture("this.(\\w+)",1) //or
+      //bexpr.getLeftOperand().toString() = expr2.toString().regexpCapture("this.(\\w+)",1)
     )
     and 
     lexpr = bexpr.getLeftOperand() and

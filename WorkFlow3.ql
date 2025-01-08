@@ -10,10 +10,18 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
   }
 
   predicate isSink(DataFlow::Node sink) {
-    exists( BinaryExpr bexpr, Expr expr | 
-      bexpr.getRightOperand().toString() = "maxDataLength" and 
-      expr = bexpr.getLeftOperand() and
-      sink.asExpr() = expr
+    exists( BinaryExpr bexpr, Expr expr, Expr src_expr | 
+      bexpr.getRightOperand() = src_expr 
+      and
+      src_expr.toString() = "maxDataLength" 
+      and
+      expr = bexpr.getLeftOperand()
+      and
+      expr.toString() = "dataLength" 
+      and 
+      src_expr.getEnclosingCallable().getDeclaringType().toString() = expr.getEnclosingCallable().getDeclaringType().toString()
+      and
+      sink.asExpr() = expr 
       )
   }
 }

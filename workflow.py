@@ -11,7 +11,8 @@ from tqdm import tqdm
 current_dir = os.getcwd()
 
 line_number_forward = 12
-line_number_reverse = 14
+line_number_reverse_left = 22
+line_number_reverse_right = 18
 
 # 基于当前工作目录设置路径
 output_forward_csv = os.path.join(current_dir, "csv_forward_results")
@@ -26,7 +27,9 @@ bqrs_file = "results.bqrs"
 output_csv = "test_results.csv"
 workflow_file_path = current_dir  # 当前目录的子文件夹
 old_text_forward = "%IPC_MAXIMUM_RESPONSE_LENGTH"
-old_text_reverse = "maxDataLength"
+old_text_reverse_right = "maxDataLength"
+old_text_reverse_left = "dataLength"
+
 
 import os
 import platform
@@ -183,6 +186,45 @@ def modify_and_run_codeql(workflow_file_path, line_number, old_text, new_text, o
     except Exception as e:
         print(f"An error occurred while modifying and running CodeQL: {e}")
         raise
+    
+def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path):
+    try:
+        # read all lines in file
+        with open(workflow_file_path, 'r') as file:
+            lines = file.readlines()
+                
+        # modify specific line IN WORKFLOW3 先右边的变量
+        if line_number_right <= len(lines) or line_number_left <= len(lines):  
+            # 先处理右边的
+            if old_text_right in lines[line_number_right - 1]:  
+                lines[line_number_right - 1] = lines[line_number_right - 1].replace(old_text_right, new_text_right)
+            else:
+                print(f"'{old_text_right}' not found in line {line_number_right}.")
+            # 再处理左边的
+            if old_text_left in lines[line_number_left - 1]:  
+                lines[line_number_left - 1] = lines[line_number_left - 1].replace(old_text_left, new_text_left)
+            else:
+                print(f"'{old_text_left}' not found in line {line_number_left}.")
+        
+                
+        # 生成真实的 .ql 文件
+        ql_file_path = os.path.join(output_ql_dir, f"{query_name}.ql")
+        with open(ql_file_path, 'w') as file:
+            file.writelines(lines)
+        print(f"Created QL file: {ql_file_path}")
+        
+        # 生成 .bqrs 输出文件路径
+        bqrs_file_path = os.path.join(output_bqrs_dri, f"{query_name}.bqrs")
+
+        # 运行 CodeQL 查询
+        run_codeql(ql_file_path, bqrs_file_path, codeql_path, codeqldb_path)
+        
+        # 返回文件路径
+        return {"ql_file": ql_file_path, "bqrs_file": bqrs_file_path}
+    except Exception as e:
+        print(f"An error occurred while modifying and running CodeQL: {e}")
+        raise
+    
         
 def read_from_csv(input_csv):
     try:
@@ -194,17 +236,36 @@ def read_from_csv(input_csv):
         raise
     
 def process_lexpr_column(input_csv):
+    """
+    过滤 lexpr 列，只保留包含至少一个大写字母的连续英文字符（非数字），
+    并排除单字母值，同时确保保留 lexpr 和 rexpr 的配对关系。
+    
+    :param input_csv: 输入的 CSV 文件路径。
+    :return: 返回过滤后的配对 (lexpr, rexpr) 列表。
+    """
     try:
-        # read CSV file
+        # 读取 CSV 文件
         df = pd.read_csv(input_csv)
 
-        # extract col of lexpr except "..." and ""
-        lexpr_filtered = df['lexpr'][~df['lexpr'].str.contains(r'\.\.\.') & ~df['lexpr'].str.match(r'^".*"$')]
-        # drop duplicates
-        lexpr_unique = lexpr_filtered.drop_duplicates()
+        # 检查是否存在 'lexpr' 和 'rexpr' 列
+        if 'lexpr' not in df.columns or 'rexpr' not in df.columns:
+            raise ValueError(f"Missing 'lexpr' or 'rexpr' column in {input_csv}.")
 
-        # return duplicated and filtered list
-        return lexpr_unique.tolist()
+        # 定义正则表达式：匹配至少两个连续英文字符，且至少包含一个大写字母
+        valid_pattern = r'^(?=.*[A-Z])[a-zA-Z]{2,}$'
+
+        # 过滤 lexpr 列：匹配正则，且不为空
+        filtered_df = df[df['lexpr'].str.match(valid_pattern, na=False)]
+
+        # 同时确保 rexpr 列不为空
+        filtered_df = filtered_df[filtered_df['rexpr'].notna()]
+
+        # 如果过滤后没有数据，返回空列表
+        if filtered_df.empty:
+            return [], []
+
+        # 返回 lexpr 和 rexpr 的配对列表，不去重
+        return filtered_df['lexpr'].tolist(), filtered_df['rexpr'].tolist()
     except Exception as e:
         print(f"An error occurred while processing the lexpr column in {input_csv}: {e}")
         raise
@@ -336,15 +397,23 @@ if __name__ == '__main__':
             input_csv = os.path.join(potential_forward_result_folder_path, file_name)
             filename_reverse = 'WorkFlow3.ql'
             
-            # get lexpr col and duplicate
-            lexpr_list = process_lexpr_column(input_csv)
+            # 获取 lexpr 和 rexpr 列数据
+            lexpr_list, rexpr_list = process_lexpr_column(input_csv)
+
+            # 如果任一列表为空，跳过该文件, 因为process_lexpr返回的左边不符合
+            if not lexpr_list or not rexpr_list:
+                print(f"Skipping {file_name}: No valid lexpr-rexpr pairs found.")
+                continue
+            
             original_ql_file = os.path.join(workflow_file_path, filename_reverse)
             
-            # iterate every elements in lexpr col and run Codeql
-        for index, new_text in enumerate(tqdm(lexpr_list, desc=f"Processing {file_name}", unit="lexpr", leave=False)):
+            # Iterate over lexpr_list and rexpr_list simultaneously and run CodeQL
+            for index, (new_text_left, new_text_right) in enumerate(
+                tqdm(zip(lexpr_list, rexpr_list), desc=f"Processing {file_name}", unit="pair", leave=False, total=len(lexpr_list))
+            ):
                 # 修改并运行 CodeQL 查询, 这里是step3的codeql文件
                 query_name = f"reverse_query_{file_name}_{index + 1}"
-                temp_files_info = modify_and_run_codeql(original_ql_file, line_number_reverse, old_text_reverse, new_text, output_reverse_ql, output_reverse_bqrs, query_name, codeql_path, codeql_db_path)
+                temp_files_info = modify_and_run_codeql_twice(original_ql_file, line_number_reverse_left, line_number_reverse_right, old_text_reverse_left, old_text_reverse_right, new_text_left, new_text_right, output_reverse_ql, output_reverse_bqrs, query_name, codeql_path, codeql_db_path)
                 
                 # 解码 .bqrs 文件并保存结果到 CSV
                 output_csv = os.path.join(output_reverse_csv, f"result_{file_name}_lexpr_{index + 1}.csv")
