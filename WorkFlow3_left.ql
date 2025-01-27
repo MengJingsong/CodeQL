@@ -6,16 +6,14 @@ import semmle.code.java.dataflow.TaintTracking //TaintTracking
 
 module MyFlowConfiguration implements DataFlow::ConfigSig {
   predicate isSource(DataFlow::Node source) {
-    exists(AssignExpr asexpr |
-      source.asExpr() = asexpr.getDest()
-    )
+    source.asExpr() instanceof MethodCall
   }
 
   predicate isSink(DataFlow::Node sink) {
     exists( BinaryExpr bexpr, Expr expr, Expr src_expr | 
       bexpr.getRightOperand() = src_expr 
       and
-      src_expr.toString() = "maxDataLength" 
+      src_expr.toString().matches("%Runtime")
       and
       expr = bexpr.getLeftOperand()
       and

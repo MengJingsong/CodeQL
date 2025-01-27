@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 current_dir = os.getcwd()
 
-line_number_forward = 12
+line_number_forward = 20    #最新的除了getint之外的情况
 line_number_reverse_left = 22
 line_number_reverse_right = 18
 
@@ -26,7 +26,7 @@ potential_forward_result_folder_path = os.path.join(current_dir, "filtered_csv_f
 bqrs_file = "results.bqrs"
 output_csv = "test_results.csv"
 workflow_file_path = current_dir  # 当前目录的子文件夹
-old_text_forward = "%IPC_MAXIMUM_RESPONSE_LENGTH"
+old_text_forward = "%DFS_NAMENODE_MAX_CORRUPT_FILE_BLOCKS_RETURNED_KEY"
 old_text_reverse_right = "maxDataLength"
 old_text_reverse_left = "dataLength"
 
@@ -358,7 +358,7 @@ if __name__ == '__main__':
         
         # Process each replacement value
         # Use Workflow 2
-        filename = 'WorkFlow2.ql'
+        filename = 'WorkFlow2_1.ql'
         workflow_file = os.path.join(workflow_file_path, filename)
         
         print("Compile Starts.")
@@ -397,10 +397,11 @@ if __name__ == '__main__':
             input_csv = os.path.join(potential_forward_result_folder_path, file_name)
             filename_reverse = 'WorkFlow3.ql'
             
-            # 获取 lexpr 和 rexpr 列数据
+            # get lexpr and rexpr col
             lexpr_list, rexpr_list = process_lexpr_column(input_csv)
 
             # 如果任一列表为空，跳过该文件, 因为process_lexpr返回的左边不符合
+            # if any col is empty, skip 
             if not lexpr_list or not rexpr_list:
                 print(f"Skipping {file_name}: No valid lexpr-rexpr pairs found.")
                 continue
@@ -411,11 +412,11 @@ if __name__ == '__main__':
             for index, (new_text_left, new_text_right) in enumerate(
                 tqdm(zip(lexpr_list, rexpr_list), desc=f"Processing {file_name}", unit="pair", leave=False, total=len(lexpr_list))
             ):
-                # 修改并运行 CodeQL 查询, 这里是step3的codeql文件
+                # modify and run codeql query
                 query_name = f"reverse_query_{file_name}_{index + 1}"
                 temp_files_info = modify_and_run_codeql_twice(original_ql_file, line_number_reverse_left, line_number_reverse_right, old_text_reverse_left, old_text_reverse_right, new_text_left, new_text_right, output_reverse_ql, output_reverse_bqrs, query_name, codeql_path, codeql_db_path)
                 
-                # 解码 .bqrs 文件并保存结果到 CSV
+                # decode .bqrs and save into CSV
                 output_csv = os.path.join(output_reverse_csv, f"result_{file_name}_lexpr_{index + 1}.csv")
                 decode_to_csv(temp_files_info['bqrs_file'], output_csv, codeql_path)
             

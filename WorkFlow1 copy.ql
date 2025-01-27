@@ -658,7 +658,7 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
   predicate isSource(DataFlow::Node source) {
     // exists(StringLiteral sl, Method m, MethodCall mc, int index |
     
-    //   mc.getMethod() = m and
+    //   mc.getMethod() = m and 
     //   mc.getArgument(index) = sl and
     //   stringSet(sl.getValue()) and               
     //   source.asExpr() = mc.getArgument(index)  
@@ -673,11 +673,14 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
   //TODO: getint 需要改 1.21
   //TODO: 同时select 最后的getDeclaringType不对, 需要的是确切的location的class, 也就是具体的类的名字呢
   predicate isSink(DataFlow::Node sink) {
-      exists(MethodCall call, int index |
-        sink.asExpr() = call.getArgument(index) and
-        not sink.asExpr().toString().matches("newName") and
+      exists(MethodCall call, GEExpr ge, GTExpr gt, LEExpr le, LTExpr lt|
+        sink.asExpr() = ge.getRightOperand() or
+        sink.asExpr() = gt.getRightOperand() or
+        sink.asExpr() = le.getRightOperand() or
+        sink.asExpr() = lt.getRightOperand()
+        //not sink.asExpr().toString().matches("newName") and
         //call.getMethod().getName().matches("get%") and 
-        sink.asExpr().toString().matches("DFS%")
+        //sink.asExpr().toString().charAt(0).isUppercase()
       )
     }
 }
@@ -689,12 +692,10 @@ from MyFlow::PathNode source, MyFlow::PathNode sink
 where MyFlow::flowPath(source, sink)
 select
   source,
-  source.getNode().asExpr(),
   source.getNode().asExpr().getParent(),
   source.getNode().asExpr().getEnclosingCallable(),
   source.getNode().getEnclosingCallable().getDeclaringType(),
   sink,
-  sink.getNode().asExpr(),
   sink.getNode().asExpr().getParent(),
   sink.getNode().asExpr().getEnclosingCallable(),
   sink.getNode().getEnclosingCallable().getDeclaringType()
