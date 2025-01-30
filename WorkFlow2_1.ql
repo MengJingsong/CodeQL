@@ -11,7 +11,7 @@ import semmle.code.java.dataflow.DataFlow
 import semmle.code.java.dataflow.FlowSources
 import semmle.code.java.dataflow.TaintTracking //TaintTracking
 
-//TODO: 别忘记对应改workflow中的行数
+
 module MyFlowConfiguration implements DataFlow::ConfigSig {
   predicate isSource(DataFlow::Node source) {
     exists(MethodCall call, int index, AssignExpr aexpr, Expr expr, FieldAccess fa|
@@ -23,11 +23,13 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
     ) 
   }
 
+  // this.z,z
   predicate isAdditionalFlowStep(DataFlow::Node node1,DataFlow::Node node2) {
     exists(FieldAccess fa1, FieldAccess fa2 |
       fa1.getField() = fa2.getField() and
       node1.asExpr() = fa1 and
-      node2.asExpr() = fa2
+      node2.asExpr() = fa2 and
+      fa1.getEnclosingCallable() = fa2.getEnclosingCallable()  // 限制范围
     )
   }
 
@@ -48,11 +50,11 @@ import MyFlow::PathGraph
 from MyFlow::PathNode source, MyFlow::PathNode sink
 where MyFlow::flowPath(source, sink)
 select
-sink.getNode().asExpr().getParent(),  //得到comparison
-sink.getNode().asExpr().getParent().(BinaryExpr).getLeftOperand(), //得到另一边的东西
+sink.getNode().asExpr().getParent(), 
+sink.getNode().asExpr().getParent().(BinaryExpr).getLeftOperand(), 
 source,
-source.getNode().asExpr().getEnclosingCallable(),//外面的callable method或者constructor
-source.getNode().getEnclosingCallable().getLocation(),//所在的具体位置
+source.getNode().asExpr().getEnclosingCallable(),
+source.getNode().getEnclosingCallable().getLocation(),
 sink,
 sink.getNode().asExpr().getEnclosingCallable(),
 sink.getNode().getEnclosingCallable().getLocation() 

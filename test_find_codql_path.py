@@ -40,11 +40,18 @@ def get_codeql_path():
         if matching_paths:
             possible_paths.extend(matching_paths)  # 添加匹配到的路径
     elif system_name == "Linux":
-        # Linux 上常见的 CodeQL 路径
+        # linux 上常见的 CodeQL 路径
+        base_path = os.path.expanduser("~/.vscode-server/data/User/globalStorage/github.vscode-codeql/")
         possible_paths = [
-            os.path.expanduser("~/.codeql/codeql"),  # 手动安装
-            "/usr/local/bin/codeql"
+            os.path.expanduser("~/codeql/codeql"),  # 手动安装路径
+            "/usr/local/bin/codeql"  # 全局路径
         ]
+        
+        # 动态查找 `distribution` 目录
+        distribution_glob = os.path.join(base_path, "distribution*/codeql/codeql")
+        matching_paths = glob.glob(distribution_glob)
+        if matching_paths:
+            possible_paths.extend(matching_paths)  # 添加匹配到的路径
     elif system_name == "Windows":
         # Windows 上常见的 CodeQL 路径
         possible_paths = [
@@ -71,7 +78,7 @@ def get_codeql_db_path(project_name="apache-hadoop"):
     if system_name == "Darwin":  # macOS
         base_path = os.path.join(user_home, "Library", "Application Support", "Code", "User", "workspaceStorage")
     elif system_name == "Linux":
-        base_path = os.path.join(user_home, ".config", "Code", "User", "workspaceStorage")
+        base_path = os.path.join(user_home, ".vscode-server", "data", "User", "workspaceStorage")
     elif system_name == "Windows":
         base_path = os.path.join(user_home, "AppData", "Roaming", "Code", "User", "workspaceStorage")
     else:

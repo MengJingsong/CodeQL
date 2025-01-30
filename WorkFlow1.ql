@@ -670,8 +670,6 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
     )
   }
   
-  //TODO: getint 需要改 1.21
-  //TODO: 同时select 最后的getDeclaringType不对, 需要的是确切的location的class, 也就是具体的类的名字呢
   predicate isSink(DataFlow::Node sink) {
       exists(MethodCall call, int index |
         sink.asExpr() = call.getArgument(index) and
