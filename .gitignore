@@ -1,3 +1,5 @@
 *.ql
 *.bqrs
 *.csv
+*/
+!codeql/*.ql

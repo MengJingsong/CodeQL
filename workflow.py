@@ -317,10 +317,10 @@ if __name__ == '__main__':
         
         #--------------------------------------------
         
-        print("Stage1 WorkFlow1 Start")
+        print("Stage1 find_fieldAccess Start")
         
         # Use Workflow 1
-        filename = 'WorkFlow1.ql'
+        filename = 'find_fieldAccess.ql'
         workflow_file = os.path.join(workflow_file_path, filename)
         
         run_codeql(workflow_file, bqrs_file, codeql_path, codeql_db_path)
@@ -330,11 +330,11 @@ if __name__ == '__main__':
         # Filter the output CSV, generate unique_results.csv
         result = filter(output_csv)
         
-        print("Stage1 WorkFlow1 Ends")
+        print("Stage1 find_fieldAccess Ends")
         #--------------------------------------------
         # Workflow 2 starts
         
-        print("Stage2 WorkFlow2 Start")
+        print("Stage2 find_comparison Start")
         
         # Read replacement values from 'unique_results.csv'
         replacements = read_from_csv('unique_results.csv')
@@ -343,7 +343,7 @@ if __name__ == '__main__':
         
         # Process each replacement value
         # Use Workflow 2
-        filename = 'WorkFlow2_1.ql'
+        filename = 'find_comparison.ql'
         workflow_file = os.path.join(workflow_file_path, filename)
         
         print("Compile Starts.")
@@ -361,7 +361,7 @@ if __name__ == '__main__':
             print(f"No. {index+1} config replaced. Check CSV file.")
             
         print("Forward Process Completed.")
-        print("Stage2 WorkFlow2 End")
+        print("Stage2 find_comparison End")
 
         
         # Workflow2 ends
@@ -377,7 +377,7 @@ if __name__ == '__main__':
         # # Use tqdm 包装 csv_files，显示进度条
         # for file_name in tqdm(csv_files, desc="Workflow 3 Progress (Files)", unit="file"):
         #     input_csv = os.path.join(potential_forward_result_folder_path, file_name)
-        #     filename_reverse = 'WorkFlow3.ql'
+        #     filename_reverse = 'find_metadata.ql'
             
         #     # get lexpr and rexpr col
         #     lexpr_list, rexpr_list = process_lexpr_column(input_csv)

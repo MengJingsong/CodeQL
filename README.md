@@ -44,7 +44,7 @@ conda activate <env>
 Install necessary dependencies:
 
 ```sh
-conda install pandas tqdm
+conda install --file requirements.txt
 ```
 
 ### **3. Install Codeql and Codeql hadoop database**
