@@ -3,4 +3,6 @@
 *.csv
 */
 !codeql/
+!codeql_test/
+!codeql_test/*.ql
 !codeql/*.ql
