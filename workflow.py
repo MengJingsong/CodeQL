@@ -24,7 +24,7 @@ potential_forward_result_folder_path = os.path.join(current_dir, "filtered_csv_f
 
 bqrs_file = "results.bqrs"
 output_csv = "test_results.csv"
-workflow_file_path = current_dir 
+workflow_file_path = os.path.join(current_dir,"codeql")
 old_text_forward = "%DFS_NAMENODE_MAX_CORRUPT_FILE_BLOCKS_RETURNED_KEY"
 old_text_reverse_right = "maxDataLength"
 old_text_reverse_left = "dataLength"
@@ -32,6 +32,15 @@ old_text_reverse_left = "dataLength"
 
 import os
 import platform
+
+
+# 用来split_csv
+def split_csv(input_csv, output_csv1, output_csv2):
+    df = pd.read_csv(input_csv, header=None)
+    mid_index = len(df) // 2  # Split into two halves
+
+    df.iloc[:mid_index].to_csv(output_csv1, index=False, header=False)
+    df.iloc[mid_index:].to_csv(output_csv2, index=False, header=False)
 
 def get_codeql_db_path(project_name="apache-hadoop"):
 
@@ -318,7 +327,7 @@ if __name__ == '__main__':
         #--------------------------------------------
         
         print("Stage1 find_fieldAccess Start")
-        
+        # TODO: 如果有unique文件, 跳过Stage1
         # Use Workflow 1
         filename = 'find_fieldAccess.ql'
         workflow_file = os.path.join(workflow_file_path, filename)
@@ -342,6 +351,8 @@ if __name__ == '__main__':
         print(f"There are {len(replacements)} config will be replaced.")
         
         # Process each replacement value
+        # TODO: 如果有csv_forward_results中的数量和unique中一样, 跳过, 如果不一样, 从不一样的index开始
+        # 从这里533 分为两个部分的266和267个, 注意最后一个一定不能为空
         # Use Workflow 2
         filename = 'find_comparison.ql'
         workflow_file = os.path.join(workflow_file_path, filename)
@@ -367,6 +378,7 @@ if __name__ == '__main__':
         # Workflow2 ends
         #--------------------------------------------
         # # Workflow3 start
+        # TODO: Stage3 一定要小心, 提取的在Stage2中的信息要和query中的select对应
         # print("Stage3 WorkFlow3 Start")
         
         # # 遍历 CSV 文件
