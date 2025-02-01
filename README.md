@@ -75,9 +75,9 @@ Control CodeQL query execution with the following options:
 |------------|----------------|
 | `--ram=<MB>` | Set the maximum RAM allocation for the query execution. |
 | `--threads <num>` | Configure the number of threads for execution (default: `1`). |
-| `--save-cache` | Persist intermediate query results aggressively. |
-| `--max-disk-cache=<num>` | Set the maximum disk space usage for intermediate query results. |
-| `--compilation-cache-size=<num>` | Define the maximum size for the compilation cache directory. |
+| `--save-cache` | Persist intermediate query results aggressively. Recommonded: `--no-save-cache` |
+| `--max-disk-cache=<num>` | Set the maximum disk space usage for intermediate query results. Recommanded: `--max-disk-cache=0`|
+| `--compilation-cache-size=<num>` | Define the maximum size for the compilation cache directory. Recommanded: `--compilation-cache-size=0`|
 
 ---
 
@@ -88,6 +88,8 @@ CodeQL queries are executed via **Java-based Query Evaluator**, meaning **JVM tu
 |---------------|----------------|
 | `-J-Xmx<num>M` | Increase the maximum heap memory allocated to the JVM. |
 | `-J-XX:+UseG1GC` | Enable the **G1 Garbage Collector (G1GC)** for optimized GC performance. |
+| `-J-XX:ParallelGCThreads=16` | Increase the threads of ParallelGC. |
+| `-J-XX:+UseStringDeduplication` | Avoid the cost of String duplication |
 
 ---
 
@@ -113,6 +115,9 @@ To utilize **SSD/NVMe** storage:
    ```sh
    mv ~/codeql_db /mnt/nvme0n1/codeql_db
    ```
+
+### **3 Using Multiprocess to accelate the task**
+
 
 ---
 

@@ -177,8 +177,7 @@ def run_codeql(query_file, bqrs_output, codeql_path, codeql_db_path, num_threads
             "--max-disk-cache=0",
             "--compilation-cache-size=0",
             "-J-Xmx49152M",  # 增加 JVM 最大堆内存
-            "-J-XX:+UseG1GC",  # 使用 G1 GC，提高 GC 性能     
-            "-J-XX:ParallelGCThreads=16",
+            "-J-XX:+UseG1GC",  # 使用 G1 GC，提高 GC 性能    
             "-J-XX:+UseStringDeduplication"
         ]
         subprocess.run(command, check=True)
