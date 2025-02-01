@@ -7,8 +7,14 @@ import platform
 import glob
 import csv
 from tqdm import tqdm
+import multiprocessing
+from multiprocessing import Value
 
-current_dir = os.getcwd()
+# 获取当前脚本文件的绝对路径
+current_file_path = os.path.abspath(__file__)
+
+# 获取当前脚本文件所在的目录
+current_dir = os.path.dirname(current_file_path)
 
 line_number_forward = 20  
 line_number_reverse_left = 22
@@ -156,7 +162,7 @@ def filter(output_csv):
         print(f"Error in processing CSV: {e}")
         raise
     
-def run_codeql(query_file, bqrs_output, codeql_path, codeql_db_path):
+def run_codeql(query_file, bqrs_output, codeql_path, codeql_db_path, num_threads):
     try:
         # Run the CodeQL query
         command = [
@@ -165,12 +171,12 @@ def run_codeql(query_file, bqrs_output, codeql_path, codeql_db_path):
             query_file,
             "-d", codeql_db_path,
             f"--output={bqrs_output}",
-            "--threads","0",
-            "--ram=96000",
+            "--threads", str(num_threads),
+            "--ram=64000",
             "--save-cache",
             "--max-disk-cache=64000",
             "--compilation-cache-size=64000",
-            "-J-Xmx96000M",  # 增加 JVM 最大堆内存
+            "-J-Xmx64000M",  # 增加 JVM 最大堆内存
             "-J-XX:+UseG1GC"  # 使用 G1 GC，提高 GC 性能        
         ]
         subprocess.run(command, check=True)
@@ -179,7 +185,7 @@ def run_codeql(query_file, bqrs_output, codeql_path, codeql_db_path):
         print(f"Error running CodeQL query: {e}")
         raise
     
-def modify_and_run_codeql(workflow_file_path, line_number, old_text, new_text, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path):
+def modify_and_run_codeql(workflow_file_path, line_number, old_text, new_text, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
     try:
         # read all lines in file
         with open(workflow_file_path, 'r') as file:
@@ -199,14 +205,14 @@ def modify_and_run_codeql(workflow_file_path, line_number, old_text, new_text, o
         
         bqrs_file_path = os.path.join(output_bqrs_dri, f"{query_name}.bqrs")
 
-        run_codeql(ql_file_path, bqrs_file_path, codeql_path, codeqldb_path)
+        run_codeql(ql_file_path, bqrs_file_path, codeql_path, codeqldb_path, num_threads)
         
         return {"ql_file": ql_file_path, "bqrs_file": bqrs_file_path}
     except Exception as e:
         print(f"An error occurred while modifying and running CodeQL: {e}")
         raise
     
-def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path):
+def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
     try:
         # read all lines in file
         with open(workflow_file_path, 'r') as file:
@@ -231,7 +237,7 @@ def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_numbe
         
         bqrs_file_path = os.path.join(output_bqrs_dri, f"{query_name}.bqrs")
 
-        run_codeql(ql_file_path, bqrs_file_path, codeql_path, codeqldb_path)
+        run_codeql(ql_file_path, bqrs_file_path, codeql_path, codeqldb_path, num_threads)
         
         return {"ql_file": ql_file_path, "bqrs_file": bqrs_file_path}
     except Exception as e:
@@ -269,23 +275,43 @@ def process_lexpr_column(input_csv):
         print(f"An error occurred while processing the lexpr column in {input_csv}: {e}")
         raise
     
+def change_filtered_header(filtered_file_path):
+    new_headers = ["Comparison", "LeftOperand", "Source","Source_MethodCall","Source_Method_Location","Sink","Sink_MethodCall","Sink_Method_Location"] 
+    
+    for filename in os.listdir(filtered_file_path):
+        if filename.endswith(".csv"):  # 确保是 CSV 文件
+            file_path = os.path.join(filtered_file_path, filename)
+        
+            # 读取 CSV 文件
+            df = pd.read_csv(file_path)
+            
+            # 确保 CSV 列数匹配新表头长度（避免错误）
+            if len(df.columns) == len(new_headers):
+                df.columns = new_headers
+            else:
+                print(f"{filename} 列数与新表头不匹配，跳过处理！")
+                continue  # 跳过这个文件
+            
+            # 覆盖原始文件
+            df.to_csv(file_path, index=False)
+            print(f"Complicated.{filename} 处理完成，已覆盖原文件")
+            
 # dest is the folder path, src is file path
 def filter_and_move_files(src, dest):
     try:
+        # 确保目标目录存在
         if not os.path.exists(dest):
             os.makedirs(dest)
 
+        # 读取 CSV 文件内容
         with open(src, 'r') as file:
-            reader = csv.DictReader(file) 
+            reader = csv.DictReader(file)  # 使用 DictReader 方便按列名操作
             filtered_rows = []
 
             for row in reader:
-                lexpr = row.get("lexpr", "")
-                rexpr = row.get("rexpr", "")
+                filtered_rows.append(row)
 
-                if lexpr.isalnum() and rexpr.isalnum():
-                    filtered_rows.append(row)
-
+        # 如果过滤后的内容非空，保存到目标路径
         if filtered_rows:
             filename = os.path.basename(src)
             destination_path = os.path.join(dest, filename)
@@ -302,6 +328,38 @@ def filter_and_move_files(src, dest):
         print(f"An error occurred during file filtering: {e}")
         raise 
     
+def process_codeql_part(part_csv, codeql_query_path, line_number, output_ql_dir, output_bqrs_dir, codeql_path, codeql_db_path, progress_counter, start_index):
+    replacements = read_from_csv(part_csv)  # 读取需要替换的配置项
+    num_threads = max(1, os.cpu_count() // 2)  # 分配一半 CPU 核心数
+
+    for index, replacement in enumerate(replacements):
+        actual_index = start_index + index  # 计算实际 index（避免冲突）
+
+        query_name = f"forward_query_{actual_index}"  # 文件名基于 actual_index
+
+        # 运行 CodeQL 查询
+        temp_files_info = modify_and_run_codeql(
+            codeql_query_path,
+            line_number,
+            old_text_forward,
+            replacement,
+            output_ql_dir,
+            output_bqrs_dir,
+            query_name,
+            codeql_path,
+            codeql_db_path,
+            num_threads  # 动态线程数
+        )
+
+        # 解码 .bqrs 文件为 CSV
+        output_csv = os.path.join(output_forward_csv, f"result_{actual_index}.csv")
+        decode_to_csv(temp_files_info['bqrs_file'], output_csv, codeql_path)
+        filter_and_move_files(output_csv, potential_forward_result_folder_path)
+
+        # 更新进度计数器
+        with progress_counter.get_lock():  # 保证多进程安全
+            progress_counter.value += 1
+            
 if __name__ == '__main__':
     
     # List of all directories to ensure existence
@@ -323,21 +381,25 @@ if __name__ == '__main__':
         codeql_path = get_codeql_path()
         # get codeqldb path
         codeql_db_path = "/dev/shm/codeql_db"
+        codeql_db_path_1 = "/dev/shm/codeql_db_1"
         
         #--------------------------------------------
         
         print("Stage1 find_fieldAccess Start")
         # TODO: 如果有unique文件, 跳过Stage1
-        # Use Workflow 1
+        
+        # Use Workflow 1 (workflow_file_path)
         filename = 'find_fieldAccess.ql'
         workflow_file = os.path.join(workflow_file_path, filename)
         
-        run_codeql(workflow_file, bqrs_file, codeql_path, codeql_db_path)
+        run_codeql(workflow_file, bqrs_file, codeql_path, codeql_db_path, 0)
         # Decode bqrs to CSV
         decode_to_csv(bqrs_file, output_csv, codeql_path)
         
         # Filter the output CSV, generate unique_results.csv
         result = filter(output_csv)
+        
+        split_csv('unique_results.csv', 'unique_results_1.csv','unique_results_2.csv')
         
         print("Stage1 find_fieldAccess Ends")
         #--------------------------------------------
@@ -346,32 +408,59 @@ if __name__ == '__main__':
         print("Stage2 find_comparison Start")
         
         # Read replacement values from 'unique_results.csv'
-        replacements = read_from_csv('unique_results.csv')
+        replacements_part1 = read_from_csv('unique_results_1.csv')
+        replacements_part2 = read_from_csv('unique_results_2.csv')
         
-        print(f"There are {len(replacements)} config will be replaced.")
+        print(f"Sperate replacement into two part 1.{len(replacements_part1)}, 2.{len(replacements_part2)}")
         
-        # Process each replacement value
-        # TODO: 如果有csv_forward_results中的数量和unique中一样, 跳过, 如果不一样, 从不一样的index开始
-        # 从这里533 分为两个部分的266和267个, 注意最后一个一定不能为空
-        # Use Workflow 2
+        total_replacements = len(replacements_part1) + len(replacements_part2)  # 计算总任务数
+        
+        print(f"Total replacements number is {total_replacements}")
+        
+        # 共享进度计数器
+        manager = multiprocessing.Manager()
+        progress_counter = Value('i', 0)  # 进度共享变量
+        
+        # p1 从 1 开始
+        start_index_p1 = 1
+        # p2 从 len(replacements_part1) + 1 开始
+        start_index_p2 = len(replacements_part1) + 1
+        
+        # Use Workflow 2 (workflow_file_path)
         filename = 'find_comparison.ql'
         workflow_file = os.path.join(workflow_file_path, filename)
         
-        print("Compile Starts.")
+        # 进程参数
+        args1 = ("unique_results_1.csv", workflow_file, line_number_forward, output_forward_ql, output_forward_bqrs, codeql_path, codeql_db_path, progress_counter, start_index_p1)
+        args2 = ("unique_results_2.csv", workflow_file, line_number_forward, output_forward_ql, output_forward_bqrs, codeql_path, codeql_db_path_1, progress_counter, start_index_p2)
         
-        for index, replacement in enumerate(tqdm(replacements, desc="Workflow 2 Progress", unit="config")):         
-            query_name = f"forward_query_{index + 1}"
-            temp_files_info = modify_and_run_codeql(workflow_file, line_number_forward, old_text_forward, replacement, output_forward_ql, output_forward_bqrs, query_name, codeql_path, codeql_db_path)
-            
-            output_csv = os.path.join(output_forward_csv, f"result_{index + 1}.csv")
-            decode_to_csv(temp_files_info['bqrs_file'], output_csv, codeql_path)
-            
-            filter_and_move_files(output_csv, potential_forward_result_folder_path)
-            
-            # Print out the result
-            print(f"No. {index+1} config replaced. Check CSV file.")
-            
-        print("Forward Process Completed.")
+        print("Compile Starts using two process parallelly")
+        
+        # 创建并启动两个进程
+        p1 = multiprocessing.Process(target=process_codeql_part, args=args1)
+        p2 = multiprocessing.Process(target=process_codeql_part, args=args2)
+
+        p1.start()
+        p2.start()
+        
+        # 主进程实时更新 tqdm 进度条
+        with tqdm(total=total_replacements, desc="Stage2 Progress", unit="config") as pbar:
+            last_progress = 0
+            while p1.is_alive() or p2.is_alive() or progress_counter.value < total_replacements:
+                # 计算新进度
+                new_progress = progress_counter.value - last_progress
+                if new_progress > 0:
+                    pbar.update(new_progress)
+                    last_progress = progress_counter.value
+
+        # 等待所有进程结束
+        p1.join()
+        p2.join()
+        
+        # 改变所有的filter_csv_forward_results中的header
+        change_filtered_header(potential_forward_result_folder_path)
+
+        print("Parallel processing completed.")
         print("Stage2 find_comparison End")
 
         
