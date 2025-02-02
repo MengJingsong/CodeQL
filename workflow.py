@@ -41,12 +41,20 @@ import platform
 
 
 # 用来split_csv
-def split_csv(input_csv, output_csv1, output_csv2):
+def split_csv(input_csv, num_splits=10):
     df = pd.read_csv(input_csv, header=None)
-    mid_index = len(df) // 2  # Split into two halves
+    total_rows = len(df)
+    split_size = total_rows // num_splits
 
-    df.iloc[:mid_index].to_csv(output_csv1, index=False, header=False)
-    df.iloc[mid_index:].to_csv(output_csv2, index=False, header=False)
+    output_files = []
+    for i in range(num_splits):
+        start_idx = i * split_size
+        end_idx = (i + 1) * split_size if i < num_splits - 1 else total_rows
+        output_csv = f'unique_results_{i+1}.csv'
+        df.iloc[start_idx:end_idx].to_csv(output_csv, index=False, header=False)
+        output_files.append(output_csv)
+    
+    return output_files
 
 def get_codeql_db_path(project_name="apache-hadoop"):
 
@@ -172,13 +180,14 @@ def run_codeql(query_file, bqrs_output, codeql_path, codeql_db_path, num_threads
             "-d", codeql_db_path,
             f"--output={bqrs_output}",
             "--threads", str(num_threads),
-            "--ram=51200",
+            "--ram=90000",
             "--no-save-cache",
             "--max-disk-cache=0",
-            "--compilation-cache-size=0",
-            "-J-Xmx49152M",  # 增加 JVM 最大堆内存
+            "-J-Xmx7200M",  # 增加 JVM 最大堆内存
             "-J-XX:+UseG1GC",  # 使用 G1 GC，提高 GC 性能    
-            "-J-XX:+UseStringDeduplication"
+            "-J-XX:+UseStringDeduplication",
+            "-J-XX:ParallelGCThreads=4",
+            "-J-XX:ConcGCThreads=2"
         ]
         subprocess.run(command, check=True)
         print(f"Successfully ran CodeQL query: {query_file}")
@@ -331,7 +340,7 @@ def filter_and_move_files(src, dest):
     
 def process_codeql_part(part_csv, codeql_query_path, line_number, output_ql_dir, output_bqrs_dir, codeql_path, codeql_db_path, progress_counter, start_index):
     replacements = read_from_csv(part_csv)  # 读取需要替换的配置项
-    num_threads = max(1, os.cpu_count() // 2)  # 分配一半 CPU 核心数
+    num_threads = max(4, os.cpu_count() // 10)  # 分配一半 CPU 核心数
 
     for index, replacement in enumerate(replacements):
         actual_index = start_index + index  # 计算实际 index（避免冲突）
@@ -361,6 +370,10 @@ def process_codeql_part(part_csv, codeql_query_path, line_number, output_ql_dir,
         with progress_counter.get_lock():  # 保证多进程安全
             progress_counter.value += 1
             
+# 动态生成不同的 codeql_db_path
+def generate_codeql_db_paths(base_path, num_processes=10):
+    return [f"{base_path}_{i}" for i in range(num_processes)]
+            
 if __name__ == '__main__':
     
     # List of all directories to ensure existence
@@ -383,80 +396,89 @@ if __name__ == '__main__':
         # get codeqldb path
         codeql_db_path = "/dev/shm/codeql_db"
         codeql_db_path_1 = "/dev/shm/codeql_db_1"
+        codeql_db_path_2 = "/dev/shm/codeql_db_2"
         
         #--------------------------------------------
         
         print("Stage1 find_fieldAccess Start")
         # TODO: 如果有unique文件, 跳过Stage1
         
-        # Use Workflow 1 (workflow_file_path)
-        filename = 'find_fieldAccess.ql'
-        workflow_file = os.path.join(workflow_file_path, filename)
+        unique_results_path = os.path.join(current_dir, "unique_results.csv")
         
-        run_codeql(workflow_file, bqrs_file, codeql_path, codeql_db_path, 0)
-        # Decode bqrs to CSV
-        decode_to_csv(bqrs_file, output_csv, codeql_path)
-        
-        # Filter the output CSV, generate unique_results.csv
-        result = filter(output_csv)
-        
-        split_csv('unique_results.csv', 'unique_results_1.csv','unique_results_2.csv')
-        
-        print("Stage1 find_fieldAccess Ends")
+        if os.path.exists(unique_results_path):
+            print("unique_results.csv 已存在，跳过 Stage1。")
+        else:
+            # Use Workflow 1 (workflow_file_path)
+            filename = 'find_fieldAccess.ql'
+            workflow_file = os.path.join(workflow_file_path, filename)
+            
+            run_codeql(workflow_file, bqrs_file, codeql_path, codeql_db_path, 0)
+            # Decode bqrs to CSV
+            decode_to_csv(bqrs_file, output_csv, codeql_path)
+            
+            # Filter the output CSV, generate unique_results.csv
+            result = filter(output_csv)
+            print("Stage1 find_fieldAccess Ends")
+            
         #--------------------------------------------
         # Workflow 2 starts
         
         print("Stage2 find_comparison Start")
         
-        # Read replacement values from 'unique_results.csv'
-        replacements_part1 = read_from_csv('unique_results_1.csv')
-        replacements_part2 = read_from_csv('unique_results_2.csv')
-        
-        print(f"Sperate replacement into two part 1.{len(replacements_part1)}, 2.{len(replacements_part2)}")
-        
-        total_replacements = len(replacements_part1) + len(replacements_part2)  # 计算总任务数
+        # 分割 CSV 为 10 份
+        split_files = split_csv('unique_results.csv', num_splits=10)
+        total_replacements = sum(len(read_from_csv(file)) for file in split_files)
         
         print(f"Total replacements number is {total_replacements}")
+        
+        # 生成 10 个 codeql_db_path
+        codeql_db_paths = generate_codeql_db_paths("/dev/shm/codeql_db", num_processes=10)
         
         # 共享进度计数器
         manager = multiprocessing.Manager()
         progress_counter = Value('i', 0)  # 进度共享变量
         
-        # p1 从 1 开始
-        start_index_p1 = 1
-        # p2 从 len(replacements_part1) + 1 开始
-        start_index_p2 = len(replacements_part1) + 1
+        # 启动 10 个进程
+        processes = []
+        start_index = 1
         
         # Use Workflow 2 (workflow_file_path)
         filename = 'find_comparison.ql'
         workflow_file = os.path.join(workflow_file_path, filename)
-        
-        # 进程参数
-        args1 = ("unique_results_1.csv", workflow_file, line_number_forward, output_forward_ql, output_forward_bqrs, codeql_path, codeql_db_path, progress_counter, start_index_p1)
-        args2 = ("unique_results_2.csv", workflow_file, line_number_forward, output_forward_ql, output_forward_bqrs, codeql_path, codeql_db_path_1, progress_counter, start_index_p2)
-        
-        print("Compile Starts using two process parallelly")
-        
-        # 创建并启动两个进程
-        p1 = multiprocessing.Process(target=process_codeql_part, args=args1)
-        p2 = multiprocessing.Process(target=process_codeql_part, args=args2)
 
-        p1.start()
-        p2.start()
-        
-        # 主进程实时更新 tqdm 进度条
+        for i, (split_file, db_path) in enumerate(zip(split_files, codeql_db_paths)):
+            replacements = read_from_csv(split_file)
+            args = (
+                split_file,
+                workflow_file,
+                line_number_forward,
+                output_forward_ql,
+                output_forward_bqrs,
+                codeql_path,
+                db_path,
+                progress_counter,
+                start_index
+            )
+            p = multiprocessing.Process(target=process_codeql_part, args=args)
+            processes.append(p)
+            start_index += len(replacements)  # 保证 index 不冲突
+
+        # 启动所有进程
+        for p in processes:
+            p.start()
+
+        # 实时更新进度条
         with tqdm(total=total_replacements, desc="Stage2 Progress", unit="config") as pbar:
             last_progress = 0
-            while p1.is_alive() or p2.is_alive() or progress_counter.value < total_replacements:
-                # 计算新进度
+            while any(p.is_alive() for p in processes) or progress_counter.value < total_replacements:
                 new_progress = progress_counter.value - last_progress
                 if new_progress > 0:
                     pbar.update(new_progress)
                     last_progress = progress_counter.value
 
         # 等待所有进程结束
-        p1.join()
-        p2.join()
+        for p in processes:
+            p.join()
         
         # 改变所有的filter_csv_forward_results中的header
         change_filtered_header(potential_forward_result_folder_path)
