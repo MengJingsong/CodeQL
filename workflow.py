@@ -350,7 +350,7 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
     while not task_queue.empty():
         try:
             # 从队列中获取任务
-            file_name, index, sink_location = task_queue.get_nowait()
+            file_name, index, sink_location, sink_variable = task_queue.get_nowait()
 
             # 创建结果目录
             result_folder = os.path.join(output_stage3_csv, file_name.replace(".csv", ""))
@@ -360,13 +360,14 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
             query_name = f"reverse_query_{file_name}_{index + 1}"
 
             # 运行 CodeQL 查询
-            temp_files_info = modify_and_run_codeql_twice()(
+            temp_files_info = modify_and_run_codeql_twice(
                 codeql_query_path,
                 line_number_first,
                 line_number_second,
                 old_text_first,
                 old_text_second,
                 sink_location,
+                sink_variable,
                 output_ql_dir,
                 output_bqrs_dir,
                 query_name,
@@ -570,9 +571,10 @@ if __name__ == '__main__':
         for file_name in csv_files:
             df = pd.read_csv(os.path.join(small_test_filtered_csv_results_path, file_name))
             sink_locations = df['Sink_Method_Location'].tolist()
+            sink_variables = df['Sink'].tolist()
 
-            for index, sink_location in enumerate(sink_locations):
-                task_queue.put((file_name, index, sink_location))
+            for index, (sink_location, sink_variable) in enumerate(zip(sink_locations,sink_variables)):
+                task_queue.put((file_name, index, sink_location, sink_variable))
                 total_tasks += 1
 
         print(f"Total tasks for Stage 3: {total_tasks}")
