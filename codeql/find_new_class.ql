@@ -14,23 +14,27 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
   predicate isSink(DataFlow::Node sink) { 
     // 只要文件位置的限定, 
     exists(GEExpr ge, GTExpr gt, LEExpr le, LTExpr lt, Expr expr|
-        expr.getLocation().toString() = "placeholder"
+        expr.getEnclosingCallable().getLocation().toString() = "placeholder"
+        and 
+        expr.toString() = "cachedDfsUsedCheckTime"
         and
-        ( sink.asExpr() = ge.getLeftOperand() and
-          ge.getRightOperand() = expr
-        ) 
-        or
-        ( sink.asExpr() = gt.getLeftOperand() and
-          gt.getRightOperand() = expr
-        ) 
-        or
-        ( sink.asExpr() = le.getLeftOperand() and
-          le.getRightOperand() = expr
-        ) 
-        or
-        ( sink.asExpr() = lt.getLeftOperand() and
-          lt.getRightOperand() = expr
-        ) 
+        (
+          ( sink.asExpr() = ge.getLeftOperand() and
+            ge.getRightOperand() = expr
+          ) 
+          or
+          ( sink.asExpr() = gt.getLeftOperand() and
+            gt.getRightOperand() = expr
+          ) 
+          or
+          ( sink.asExpr() = le.getLeftOperand() and
+            le.getRightOperand() = expr
+          ) 
+          or
+          ( sink.asExpr() = lt.getLeftOperand() and
+            lt.getRightOperand() = expr
+          ) 
+        )
       )
   }
 }

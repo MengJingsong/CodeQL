@@ -19,6 +19,7 @@ current_dir = os.path.dirname(current_file_path)
 
 line_number_forward = 20  # 替换expr.toString().matches()
 line_number_reverse = 17 # 替换expr.getLocation.toString()
+line_number_reverse_second = 19 # 替换expr.toString()
 
 output_forward_csv = os.path.join(current_dir, "csv_forward_results")
 output_reverse_csv = os.path.join(current_dir, "csv_reverse_results")
@@ -34,6 +35,7 @@ output_csv = "test_results.csv"
 workflow_file_path = os.path.join(current_dir,"codeql")
 old_text_forward = "%DFS_NAMENODE_MAX_CORRUPT_FILE_BLOCKS_RETURNED_KEY"
 old_text_reverse = "placeholder"
+old_text_reverse_second = "cachedDfsUsedCheckTime"
 
 
 import os
@@ -181,10 +183,10 @@ def run_codeql(query_file, bqrs_output, codeql_path, codeql_db_path, num_threads
             "-d", codeql_db_path,
             f"--output={bqrs_output}",
             "--threads", str(num_threads),
-            "--ram=12288",
+            "--ram=6963",
             "--no-save-cache",
             "--max-disk-cache=0",
-            "-J-Xmx9600M",  # 增加 JVM 最大堆内存
+            "-J-Xmx6400M",  # 增加 JVM 最大堆内存
             "-J-XX:+UseG1GC",  # 使用 G1 GC，提高 GC 性能    
             "-J-XX:+UseStringDeduplication",
             "-J-XX:+UnlockExperimentalVMOptions",
@@ -210,6 +212,38 @@ def modify_and_run_codeql(workflow_file_path, line_number, old_text, new_text, o
                 lines[line_number - 1] = lines[line_number - 1].replace(old_text, '%'+new_text)
             else:
                 print(f"'{old_text}' not found in line {line_number}.")
+                
+        ql_file_path = os.path.join(output_ql_dir, f"{query_name}.ql")
+        with open(ql_file_path, 'w') as file:
+            file.writelines(lines)
+        print(f"Created QL file: {ql_file_path}")
+        
+        bqrs_file_path = os.path.join(output_bqrs_dri, f"{query_name}.bqrs")
+
+        run_codeql(ql_file_path, bqrs_file_path, codeql_path, codeqldb_path, num_threads)
+        
+        return {"ql_file": ql_file_path, "bqrs_file": bqrs_file_path}
+    except Exception as e:
+        print(f"An error occurred while modifying and running CodeQL: {e}")
+        raise
+    
+def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
+    try:
+        # read all lines in file
+        with open(workflow_file_path, 'r') as file:
+            lines = file.readlines()
+                
+        # modify specific line IN WORKFLOW3 先右边的变量
+        if line_number_right <= len(lines) or line_number_left <= len(lines):  
+            if old_text_right in lines[line_number_right - 1]:  
+                lines[line_number_right - 1] = lines[line_number_right - 1].replace(old_text_right, new_text_right)
+            else:
+                print(f"'{old_text_right}' not found in line {line_number_right}.")
+            if old_text_left in lines[line_number_left - 1]:  
+                lines[line_number_left - 1] = lines[line_number_left - 1].replace(old_text_left, new_text_left)
+            else:
+                print(f"'{old_text_left}' not found in line {line_number_left}.")
+        
                 
         ql_file_path = os.path.join(output_ql_dir, f"{query_name}.ql")
         with open(ql_file_path, 'w') as file:
@@ -306,7 +340,7 @@ def filter_and_move_files(src, dest):
         print(f"An error occurred during file filtering: {e}")
         raise 
     
-def process_stage3(task_queue, codeql_query_path, line_number, old_text, output_ql_dir, output_bqrs_dir, codeql_path, codeql_db_path, progress_counter):
+def process_stage3(task_queue, codeql_query_path, line_number_first, line_number_second, old_text_first, old_text_second, output_ql_dir, output_bqrs_dir, codeql_path, codeql_db_path, progress_counter):
     """
     Worker 进程，从任务队列中取任务进行处理。
     每个任务对应一个 CSV 文件和其中的某一行数据。
@@ -326,10 +360,12 @@ def process_stage3(task_queue, codeql_query_path, line_number, old_text, output_
             query_name = f"reverse_query_{file_name}_{index + 1}"
 
             # 运行 CodeQL 查询
-            temp_files_info = modify_and_run_codeql(
+            temp_files_info = modify_and_run_codeql_twice()(
                 codeql_query_path,
-                line_number,
-                old_text,
+                line_number_first,
+                line_number_second,
+                old_text_first,
+                old_text_second,
                 sink_location,
                 output_ql_dir,
                 output_bqrs_dir,
@@ -559,7 +595,9 @@ if __name__ == '__main__':
                     task_queue,
                     workflow_file,
                     line_number_reverse,
+                    line_number_reverse_second,
                     old_text_reverse,
+                    old_text_reverse_second,
                     output_reverse_ql,
                     output_reverse_bqrs,
                     codeql_path,

@@ -116,7 +116,30 @@ To utilize **SSD/NVMe** storage:
    mv ~/codeql_db /mnt/nvme0n1/codeql_db
    ```
 
-### **3 Using Multiprocess to accelate the task**
+### **3. Enhancing Task Parallelism with Multiprocessing**
+
+To improve the efficiency of CodeQL query execution, we leverages Python's **`multiprocessing`** module to enable parallel processing. This approach significantly reduces runtime, particularly when dealing with large-scale datasets or multiple query executions.
+
+1. **Prepare the Arguments:**  
+   Consolidate all necessary parameters into a tuple to facilitate process management:
+   ```python
+   args = (replacement_file, codeql_query_file, line_number, output_ql, output_bqrs, codeql_bin_path, codeql_db_path, progress_counter, start_index)
+   ```
+   - **`progress_counter`**: A shared counter for synchronizing progress across multiple processes (used for `tqdm`)
+   
+2. **Initialize and Launch Processes:**  
+   Utilize the **`multiprocessing.Process`** class to spawn separate processes for parallel execution:
+   ```python
+   from multiprocessing import Process
+
+   process = Process(target=process_codeql_part, args=args)
+   process.start()
+   process.join()
+   ```
+   > codeql run command 不能并行同时运行, codeql 会对codebase上lock, 所以我们要把复制到/dev/shm/codeql中的db再次在RAM Disk中复制一份
+
+#### 利用线程池和任务队列来启动多线程运行
+
 
 
 ---
