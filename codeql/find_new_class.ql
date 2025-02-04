@@ -11,23 +11,29 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
     )
   }
 
-  predicate isSink(DataFlow::Node sink) {   //从binaryexpr的左边出发, 还要有class和方法的信息用来表示位置
-    exists( BinaryExpr bexpr, Expr expr, Expr src_expr | 
-      bexpr.getRightOperand() = src_expr 
-      and
-      src_expr.toString() = "maxDataLength" 
-      and
-      expr = bexpr.getLeftOperand()
-      and
-      expr.toString() = "dataLength" 
-      and 
-      src_expr.getEnclosingCallable().getDeclaringType().toString() = expr.getEnclosingCallable().getDeclaringType().toString()
-      and
-      sink.asExpr() = expr 
+  predicate isSink(DataFlow::Node sink) { 
+    // 只要文件位置的限定, 
+    exists(GEExpr ge, GTExpr gt, LEExpr le, LTExpr lt, Expr expr|
+        expr.getLocation().toString() = "placeholder"
+        and
+        ( sink.asExpr() = ge.getLeftOperand() and
+          ge.getRightOperand() = expr
+        ) 
+        or
+        ( sink.asExpr() = gt.getLeftOperand() and
+          gt.getRightOperand() = expr
+        ) 
+        or
+        ( sink.asExpr() = le.getLeftOperand() and
+          le.getRightOperand() = expr
+        ) 
+        or
+        ( sink.asExpr() = lt.getLeftOperand() and
+          lt.getRightOperand() = expr
+        ) 
       )
   }
 }
-
 
 module MyFlow = TaintTracking::Global<MyFlowConfiguration>;
 import MyFlow::PathGraph
@@ -39,6 +45,5 @@ select
   source.getNode().asExpr().getEnclosingCallable(),
   source.getNode().getEnclosingCallable().getDeclaringType(),
   sink,
-
   sink.getNode().asExpr().getEnclosingCallable(),
   sink.getNode().getEnclosingCallable().getDeclaringType() 
