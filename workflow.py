@@ -10,6 +10,7 @@ from tqdm import tqdm
 import multiprocessing
 from multiprocessing import Process, Queue, Value
 import gc
+import sys
 
 # 获取当前脚本文件的绝对路径
 current_file_path = os.path.abspath(__file__)
@@ -418,7 +419,15 @@ def process_codeql_part(part_csv, codeql_query_path, line_number, output_ql_dir,
         # 更新进度计数器
         with progress_counter.get_lock():  # 保证多进程安全
             progress_counter.value += 1
-            
+
+
+# Count the number of csv files
+def count_csv_files(folder_path):
+    return sum(
+        1 for f in os.listdir(folder_path)
+        if os.path.isfile(os.path.join(folder_path, f)) and f.lower().endswith('.csv')
+    )
+    
 # 动态生成不同的 codeql_db_path
 def generate_codeql_db_paths(base_path, num_processes=10):
     return [f"{base_path}_{i}" for i in range(num_processes)]
@@ -482,13 +491,12 @@ if __name__ == '__main__':
         print(f"Total replacements number is {total_replacements}")
         
         # 查看filter的文件中, 如果total_replacements的数量和文件中的数量一样, 就跳过Stage2
-        file_count = sum(1 for f in os.listdir(potential_forward_result_folder_path) if os.path.isfile(os.path.join(potential_forward_result_folder_path, f)))
+        file_count = count_csv_files(output_forward_csv)
         
         # 生成 10 个 codeql_db_path
         codeql_db_paths = generate_codeql_db_paths("/dev/shm/codeql_db", num_processes=10)
         
-        #if file_count == total_replacements:
-        if True:    
+        if file_count == total_replacements:    
             print(f"已经有{file_count}个结果存在，跳过 Stage2。")
         else:
             # 共享进度计数器
@@ -545,85 +553,94 @@ if __name__ == '__main__':
 
         # Stage3 Starts ----------
 
-        # 清理 Python 内存
-        clear_python_memory()
+        # 获取命令行参数（第一个是脚本名）
+        if len(sys.argv) > 1:
+            command = sys.argv[1]
 
-        # 清理系统缓存
-        clear_system_cache()
-        print("Stage3 WorkFlow3 Start")
+            # 根据命令进行判断
+            if command == 'start':
 
-        # 文件路径
-        small_test_filtered_csv_results_path = './small_test_filtered_csv_results'
-        csv_files = [f for f in os.listdir(small_test_filtered_csv_results_path) if f.endswith(".csv")]
+                # 清理 Python 内存
+                clear_python_memory()
 
-        # 创建 stage3_results 文件夹
-        os.makedirs(output_stage3_csv, exist_ok=True)
+                # 清理系统缓存
+                clear_system_cache()
+                print("Stage3 WorkFlow3 Start")
 
-        # CodeQL 查询文件路径
-        filename_reverse = 'find_new_class.ql'
-        workflow_file = os.path.join(workflow_file_path, filename_reverse)
+                # 文件路径
+                small_test_filtered_csv_results_path = './small_test_filtered_csv_results'
+                csv_files = [f for f in os.listdir(small_test_filtered_csv_results_path) if f.endswith(".csv")]
 
-        # 创建任务队列
-        task_queue = Queue()
+                # 创建 stage3_results 文件夹
+                os.makedirs(output_stage3_csv, exist_ok=True)
 
-        # 统计总任务数（每个 sink_location 视为一个独立任务）
-        total_tasks = 0
-        for file_name in csv_files:
-            df = pd.read_csv(os.path.join(small_test_filtered_csv_results_path, file_name))
-            sink_locations = df['Sink_Method_Location'].tolist()
-            sink_variables = df['Sink'].tolist()
+                # CodeQL 查询文件路径
+                filename_reverse = 'find_new_class.ql'
+                workflow_file = os.path.join(workflow_file_path, filename_reverse)
 
-            for index, (sink_location, sink_variable) in enumerate(zip(sink_locations,sink_variables)):
-                task_queue.put((file_name, index, sink_location, sink_variable))
-                total_tasks += 1
+                # 创建任务队列
+                task_queue = Queue()
 
-        print(f"Total tasks for Stage 3: {total_tasks}")
+                # 统计总任务数（每个 sink_location 视为一个独立任务）
+                total_tasks = 0
+                for file_name in csv_files:
+                    df = pd.read_csv(os.path.join(small_test_filtered_csv_results_path, file_name))
+                    sink_locations = df['Sink_Method_Location'].tolist()
+                    sink_variables = df['Sink'].tolist()
 
-        # 共享进度计数器
-        manager = multiprocessing.Manager()
-        progress_counter = Value('i', 0)
-        
-        # 生成 10 个不同的 codeql_db_path
-        codeql_db_paths = [f"/dev/shm/codeql_db_{i}" for i in range(10)]
+                    for index, (sink_location, sink_variable) in enumerate(zip(sink_locations,sink_variables)):
+                        task_queue.put((file_name, index, sink_location, sink_variable))
+                        total_tasks += 1
 
-        # 启动 10 个工作进程
-        num_workers = 10
-        processes = []
+                print(f"Total tasks for Stage 3: {total_tasks}")
 
-        for i in range(num_workers):
-            p = Process(
-                target=process_stage3,
-                args=(
-                    task_queue,
-                    workflow_file,
-                    line_number_reverse,
-                    line_number_reverse_second,
-                    old_text_reverse,
-                    old_text_reverse_second,
-                    output_reverse_ql,
-                    output_reverse_bqrs,
-                    codeql_path,
-                    codeql_db_paths[i],
-                    progress_counter
-                )
-            )
-            processes.append(p)
-            p.start()
+                # 共享进度计数器
+                manager = multiprocessing.Manager()
+                progress_counter = Value('i', 0)
+                
+                # 生成 10 个不同的 codeql_db_path
+                codeql_db_paths = [f"/dev/shm/codeql_db_{i}" for i in range(10)]
 
-        # 实时进度条
-        with tqdm(total=total_tasks, desc="Stage 3 Progress", unit="query") as pbar:
-            last_progress = 0
-            while any(p.is_alive() for p in processes) or progress_counter.value < total_tasks:
-                new_progress = progress_counter.value - last_progress
-                if new_progress > 0:
-                    pbar.update(new_progress)
-                    last_progress = progress_counter.value
+                # 启动 10 个工作进程
+                num_workers = 10
+                processes = []
 
-        # 等待所有进程结束
-        for p in processes:
-            p.join()
+                for i in range(num_workers):
+                    p = Process(
+                        target=process_stage3,
+                        args=(
+                            task_queue,
+                            workflow_file,
+                            line_number_reverse,
+                            line_number_reverse_second,
+                            old_text_reverse,
+                            old_text_reverse_second,
+                            output_reverse_ql,
+                            output_reverse_bqrs,
+                            codeql_path,
+                            codeql_db_paths[i],
+                            progress_counter
+                        )
+                    )
+                    processes.append(p)
+                    p.start()
 
-        print("Stage3 WorkFlow3 End")
+                # 实时进度条
+                with tqdm(total=total_tasks, desc="Stage 3 Progress", unit="query") as pbar:
+                    last_progress = 0
+                    while any(p.is_alive() for p in processes) or progress_counter.value < total_tasks:
+                        new_progress = progress_counter.value - last_progress
+                        if new_progress > 0:
+                            pbar.update(new_progress)
+                            last_progress = progress_counter.value
+
+                # 等待所有进程结束
+                for p in processes:
+                    p.join()
+
+                print("Stage3 WorkFlow3 End")
+                
+        print("ALL FINISHED.")
         
     except Exception as e:
         print(f"Error occurred: {e}")
