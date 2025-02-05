@@ -6,3 +6,5 @@
 !codeql_test/
 !codeql_test/*.ql
 !codeql/*.ql
+!test/
+!test/*.py
