@@ -47,7 +47,6 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
 module MyFlow = TaintTracking::Global<MyFlowConfiguration>;
 import MyFlow::PathGraph
 
-//TODO: 这里要写个脚本改变所有的filtered csv forward的header
 from MyFlow::PathNode source, MyFlow::PathNode sink
 where MyFlow::flowPath(source, sink)
 select

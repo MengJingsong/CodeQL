@@ -136,23 +136,26 @@ To improve the efficiency of CodeQL query execution, we leverages Python's **`mu
    process.start()
    process.join()
    ```
-   > codeql run command 不能并行同时运行, codeql 会对codebase上lock, 所以我们要把复制到/dev/shm/codeql中的db再次在RAM Disk中复制一份
-
-#### 利用线程池和任务队列来启动多线程运行
-
-
+   > 	CodeQL run commands **cannot** be executed in parallel on the same database because CodeQL applies a lock on the codebase. Therefore, to achieve parallel execution, create multiple copies of the database stored in `/dev/shm/codeql`, with each process working on its own copy in the RAM disk.
 
 ---
 
 ## ** Running the Query**
 To execute the workflow:
 ```sh
-python workflow.py
+python workflow.py start
 ```
+The start option initiates Stage 3, which performs reverse data flow analysis to identify new object creations.
 
 ### **Workflow Execution Steps**
-#### ** Workflow 1**
-> *(Detailed workflow steps to be added based on specific use case.)*
+#### ** Stage 1**
+Extract configuration variable names from hdfs_default.xml and identify where they are used and assigned values in the HDFS codebase.
+
+#### ** Stage 2**
+Track the flow of variables from Stage 1 using CodeQL’s Taint Tracking to find comparison operations, as they represent simple constraint relationships in the code.
+
+#### ** Stage 3**
+Track all comparisons identified in Stage 2 and perform reverse data flow analysis to locate object creation points. This helps investigate potential connections between these creation points and metadata.
 
 ---
 
