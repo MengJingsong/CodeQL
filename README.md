@@ -56,6 +56,8 @@ The **Python script automatically detects** the CodeQL installation path and the
 - `find_codeql_path()`
 - `find_codeql_db_path()`
 
+You also can use `test_find_codeql_path.py` in `test` file to detect corresponding location of codeql_db and codeql.
+
 Modify these functions to explicitly specify the **CodeQL binary and database locations**.
 
 ---
@@ -100,9 +102,11 @@ Loading the **CodeQL database (codeql_db)** into **RAM Disk** can significantly 
 Example (`cloudlab` setup):
 ```sh
 mkdir /dev/shm/codeql_db
-cp -r ~/codeql_db/* /dev/shm/codeql_db
+cp -r path/to/codeql_db/* /dev/shm/codeql_db
 ```
+You can use `test_find_codeql_path.py` in `test` file to create codeql_db copy ten times automatically.
  **Effect**: Faster query execution by reducing disk read latency.
+ 
 
 ### **2️ Store CodeQL Database on SSD/NVMe**
 To utilize **SSD/NVMe** storage:

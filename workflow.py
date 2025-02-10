@@ -184,10 +184,10 @@ def run_codeql(query_file, bqrs_output, codeql_path, codeql_db_path, num_threads
             "-d", codeql_db_path,
             f"--output={bqrs_output}",
             "--threads", str(num_threads),
-            "--ram=6963",
+            "--ram=34700",
             "--no-save-cache",
             "--max-disk-cache=0",
-            "-J-Xmx6400M",  # 增加 JVM 最大堆内存
+            "-J-Xmx29500M",  # 增加 JVM 最大堆内存
             "-J-XX:+UseG1GC",  # 使用 G1 GC，提高 GC 性能    
             "-J-XX:+UseStringDeduplication",
             "-J-XX:+UnlockExperimentalVMOptions",
