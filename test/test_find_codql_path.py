@@ -1,6 +1,7 @@
 import os
 import platform
 import glob
+import shutil
 
 current_dir = os.getcwd()
 
@@ -95,6 +96,25 @@ def get_codeql_db_path(project_name="apache-hadoop"):
     # 如果未找到路径，抛出异常或提示用户手动输入
     raise FileNotFoundError(f"CodeQL database for project '{project_name}' not found in default locations. "
                             "Please ensure the database exists or specify the path manually.")
+    
+def move_codeql_db_to_shm(codeql_db_path):
+    shm_path = "/dev/shm"
+    if not os.path.exists(shm_path):
+        raise RuntimeError("/dev/shm does not exist. Ensure you're on a Linux system with shared memory support.")
+
+    base_name = os.path.basename(codeql_db_path)
+    
+    for i in range(10):
+        new_name = f"{base_name}_{i}"
+        new_path = os.path.join(shm_path, new_name)
+
+        if os.path.exists(new_path):
+            print(f"Skipping {new_path}, already exists.")
+            continue
+        
+        print(f"Copying {codeql_db_path} to {new_path} ...")
+        shutil.copytree(codeql_db_path, new_path)
+        print(f"Successfully copied to {new_path}")
 
             
 if __name__ == '__main__':
@@ -114,6 +134,8 @@ if __name__ == '__main__':
     # Ensure installed codeql path
     get_codeql_path()
     # Ensure installed codeql database
-    get_codeql_db_path()
+    codeql_db_path = get_codeql_db_path()
+    move_codeql_db_to_shm(codeql_db_path)
+    print("Successful!")
     
     
