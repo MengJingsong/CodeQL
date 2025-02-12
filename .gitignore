@@ -8,3 +8,5 @@
 !codeql/*.ql
 !test/
 !test/*.py
+!script/
+!script/*.py

@@ -19,8 +19,8 @@ current_file_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(current_file_path)
 
 line_number_forward = 20  # 替换expr.toString().matches()
-line_number_reverse = 17 # 替换expr.getLocation.toString()
-line_number_reverse_second = 19 # 替换expr.toString()
+line_number_reverse = 6 # 替换expr.getLocation.toString()
+line_number_reverse_second = 8 # 替换expr.toString()
 
 output_forward_csv = os.path.join(current_dir, "csv_forward_results")
 output_reverse_csv = os.path.join(current_dir, "csv_reverse_results")
@@ -568,14 +568,14 @@ if __name__ == '__main__':
                 print("Stage3 WorkFlow3 Start")
 
                 # 文件路径
-                small_test_filtered_csv_results_path = './small_test_filtered_csv_results'
+                small_test_filtered_csv_results_path = './small_filtered_csv_results'
                 csv_files = [f for f in os.listdir(small_test_filtered_csv_results_path) if f.endswith(".csv")]
 
                 # 创建 stage3_results 文件夹
                 os.makedirs(output_stage3_csv, exist_ok=True)
 
                 # CodeQL 查询文件路径
-                filename_reverse = 'find_new_class.ql'
+                filename_reverse = 'find_creation_in_ifstmt.ql'
                 workflow_file = os.path.join(workflow_file_path, filename_reverse)
 
                 # 创建任务队列
