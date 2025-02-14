@@ -21,7 +21,7 @@ current_dir = os.path.dirname(current_file_path)
 line_number_forward = 20  # 替换expr.toString().matches()
 line_number_reverse = 5 # 替换expr.getLocation.toString()
 line_number_reverse_second = 7 # 替换expr.toString()
-line_number_stage4 = 18 # 同样替换expr.toString() 其中的placeholder
+line_number_stage4 = 35 # 同样替换expr.toString() 其中的placeholder
 
 output_forward_csv = os.path.join(current_dir, "csv_forward_results")
 output_reverse_csv = os.path.join(current_dir, "csv_reverse_results")
@@ -237,6 +237,33 @@ def modify_and_run_codeql(workflow_file_path, line_number, old_text, new_text, o
         print(f"An error occurred while modifying and running CodeQL: {e}")
         raise
     
+def modify_and_run_codeql_direct(workflow_file_path, line_number, old_text, new_text, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
+    try:
+        # read all lines in file
+        with open(workflow_file_path, 'r') as file:
+            lines = file.readlines()
+        
+        # modify specific line
+        if line_number <= len(lines):  
+            if old_text in lines[line_number - 1]:  
+                lines[line_number - 1] = lines[line_number - 1].replace(old_text, new_text)
+            else:
+                print(f"'{old_text}' not found in line {line_number}.")
+                
+        ql_file_path = os.path.join(output_ql_dir, f"{query_name}.ql")
+        with open(ql_file_path, 'w') as file:
+            file.writelines(lines)
+        print(f"Created QL file: {ql_file_path}")
+        
+        bqrs_file_path = os.path.join(output_bqrs_dri, f"{query_name}.bqrs")
+
+        run_codeql(ql_file_path, bqrs_file_path, codeql_path, codeqldb_path, num_threads)
+        
+        return {"ql_file": ql_file_path, "bqrs_file": bqrs_file_path}
+    except Exception as e:
+        print(f"An error occurred while modifying and running CodeQL: {e}")
+        raise
+    
 def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
     try:
         # read all lines in file
@@ -417,7 +444,7 @@ def process_stage4(task_queue, codeql_query_path, line_number_first, output_ql_d
             query_name = f"stage4_reverse_query_{index + 1}"
 
             # 运行 CodeQL 查询
-            temp_files_info = modify_and_run_codeql(
+            temp_files_info = modify_and_run_codeql_direct(
                 codeql_query_path,
                 line_number_first,
                 old_text_first_stage4,

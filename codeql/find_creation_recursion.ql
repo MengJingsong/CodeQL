@@ -14,12 +14,9 @@ import semmle.code.java.dataflow.TaintTracking //TaintTracking
 
 module MyFlowConfiguration implements DataFlow::ConfigSig {
   predicate isSource(DataFlow::Node source) {
-    exists(IfStmt ifstmt, Stmt childstmt, Expr expr|
-        ifstmt.getLocation().toString() = "placeholder" and
-        childstmt = ifstmt.getAChild() and  //getAChild 会返回所有的Child
-        expr.getAnEnclosingStmt() = childstmt and
-        source.asExpr() = expr
-    ) 
+    exists(ClassInstanceExpr classexpr|
+        source.asExpr() = classexpr
+    )
   }
 
   // this.z,z
@@ -33,9 +30,13 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
   }
 
   predicate isSink(DataFlow::Node sink) {
-    exists(ClassInstanceExpr classexpr|
-        sink.asExpr() = classexpr
-    )
+
+    exists(IfStmt ifstmt, Stmt childstmt, Expr expr|
+        ifstmt.getLocation().toString() = "placeholder" and
+        childstmt = ifstmt.getAChild() and  //getAChild 会返回所有的Child
+        expr.getAnEnclosingStmt() = childstmt and
+        sink.asExpr() = expr
+    ) 
   }
 }
 
