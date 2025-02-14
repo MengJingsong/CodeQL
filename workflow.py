@@ -19,8 +19,9 @@ current_file_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(current_file_path)
 
 line_number_forward = 20  # 替换expr.toString().matches()
-line_number_reverse = 6 # 替换expr.getLocation.toString()
-line_number_reverse_second = 8 # 替换expr.toString()
+line_number_reverse = 5 # 替换expr.getLocation.toString()
+line_number_reverse_second = 7 # 替换expr.toString()
+line_number_stage4 = 18 # 同样替换expr.toString() 其中的placeholder
 
 output_forward_csv = os.path.join(current_dir, "csv_forward_results")
 output_reverse_csv = os.path.join(current_dir, "csv_reverse_results")
@@ -29,7 +30,12 @@ output_reverse_ql = os.path.join(current_dir, "ql_reverse_results")
 output_forward_bqrs = os.path.join(current_dir, "bqrs_forward_results")
 output_reverse_bqrs = os.path.join(current_dir, "bqrs_reverse_results")
 potential_forward_result_folder_path = os.path.join(current_dir, "filtered_csv_forward_results")
-output_stage3_csv = os.path.join(current_dir, "csv_stage3_resultss")
+output_stage3_csv = os.path.join(current_dir, "csv_stage3_results")
+output_stage4_csv = os.path.join(current_dir, "csv_stage4_results")
+output_stage4_ql = os.path.join(current_dir, "ql_stage4_results")
+output_stage4_bqrs = os.path.join(current_dir, "bqrs_stage4_results")
+
+script_path = os.path.join(current_dir, "script")
 
 bqrs_file = "results.bqrs"
 output_csv = "test_results.csv"
@@ -37,6 +43,9 @@ workflow_file_path = os.path.join(current_dir,"codeql")
 old_text_forward = "%DFS_NAMENODE_MAX_CORRUPT_FILE_BLOCKS_RETURNED_KEY"
 old_text_reverse = "placeholder"
 old_text_reverse_second = "cachedDfsUsedCheckTime"
+
+# stage4中需要替换的
+old_text_first_stage4 = "placeholder"
 
 
 import os
@@ -387,6 +396,50 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
 
         except Exception as e:
             print(f"Error processing {file_name}, index {index}: {e}")
+            
+def process_stage4(task_queue, codeql_query_path, line_number_first, output_ql_dir, output_bqrs_dir, codeql_path, codeql_db_path, progress_counter):
+    """
+    Worker 进程，从任务队列中取任务进行处理。
+    每个任务对应一个 CSV 文件和其中的某一行数据。
+    """
+    num_threads = max(4, os.cpu_count() // 10)  # 每个进程内部的线程数
+
+    while not task_queue.empty():
+        try:
+            # 从队列中获取任务
+            index, source_location = task_queue.get_nowait()
+
+            # 创建结果目录
+            result_folder = output_stage4_csv
+            os.makedirs(result_folder, exist_ok=True)
+
+            # 跟着ql文件走的名字
+            query_name = f"stage4_reverse_query_{index + 1}"
+
+            # 运行 CodeQL 查询
+            temp_files_info = modify_and_run_codeql(
+                codeql_query_path,
+                line_number_first,
+                old_text_first_stage4,
+                source_location,
+                output_ql_dir,
+                output_bqrs_dir,
+                query_name,
+                codeql_path,
+                codeql_db_path,
+                num_threads
+            )
+
+            # 解码 BQRS 文件为 CSV，保存到对应文件夹
+            output_csv = os.path.join(result_folder, f"result_{index + 1}.csv")
+            decode_to_csv(temp_files_info['bqrs_file'], output_csv, codeql_path)
+
+            # 更新进度计数器
+            with progress_counter.get_lock():
+                progress_counter.value += 1
+
+        except Exception as e:
+            print(f"Error processing {file_name}, index {index}: {e}")
     
 def process_codeql_part(part_csv, codeql_query_path, line_number, output_ql_dir, output_bqrs_dir, codeql_path, codeql_db_path, progress_counter, start_index):
     replacements = read_from_csv(part_csv)  # 读取需要替换的配置项
@@ -443,7 +496,10 @@ if __name__ == '__main__':
         output_forward_bqrs,
         output_reverse_bqrs,
         potential_forward_result_folder_path,
-        output_stage3_csv
+        output_stage3_csv,
+        output_stage4_csv,
+        output_stage4_ql,
+        output_stage4_bqrs
     ]
     
     # Ensure directories exist
@@ -605,6 +661,7 @@ if __name__ == '__main__':
                 num_workers = 10
                 processes = []
 
+                # 这里只要替换一行
                 for i in range(num_workers):
                     p = Process(
                         target=process_stage3,
@@ -637,9 +694,95 @@ if __name__ == '__main__':
                 # 等待所有进程结束
                 for p in processes:
                     p.join()
+                    
 
                 print("Stage3 WorkFlow3 End")
                 
+        # 进行 Stage4 对于 Stage3中的找到的ifstmt的位置递归的找
+        # ----Stage4------------------
+        # 获取命令行参数（第一个是脚本名）
+        if len(sys.argv) > 1:
+            command = sys.argv[1]
+
+            # 根据命令进行判断
+            if command == 'stage4':
+
+                # 清理 Python 内存
+                clear_python_memory()
+
+                # 清理系统缓存
+                clear_system_cache()
+                print("Stage4 WorkFlow4 Start")
+
+                # 文件路径
+                recursion_results_path = '' # 这里直接到script中
+
+                # 创建 stage4_results 文件夹
+                os.makedirs(output_stage4_csv, exist_ok=True)
+
+                # CodeQL 查询文件路径
+                filename_stage4 = 'find_creation_recursion.ql'
+                workflow_file = os.path.join(workflow_file_path, filename_stage4)
+
+                # 创建任务队列
+                task_queue = Queue()
+
+                # 统计总任务数（每个 sink_location 视为一个独立任务）
+                total_tasks = 0
+                script_file = os.path.join(script_path, 'output_recursion.csv')
+                replacements = read_from_csv(script_file)
+
+                for index, ifstmt_location in enumerate(replacements):
+                    task_queue.put((index, ifstmt_location))
+                    total_tasks += 1
+
+                print(f"Total tasks for Stage 4: {total_tasks}") # 应该是23个
+
+                # 共享进度计数器
+                manager = multiprocessing.Manager()
+                progress_counter = Value('i', 0)
+                
+                # 生成 10 个不同的 codeql_db_path
+                codeql_db_paths = [f"/dev/shm/codeql_db_{i}" for i in range(10)]
+
+                # 启动 10 个工作进程
+                num_workers = 10
+                processes = []
+
+                for i in range(num_workers):
+                    p = Process(
+                        target=process_stage4,
+                        args=(
+                            task_queue,
+                            workflow_file,
+                            line_number_stage4,
+                            output_stage4_ql,
+                            output_stage4_bqrs,
+                            codeql_path,
+                            codeql_db_paths[i],
+                            progress_counter,
+                        )
+                    )
+                    processes.append(p)
+                    p.start()
+
+                # 实时进度条
+                with tqdm(total=total_tasks, desc="Stage 4 Progress", unit="query") as pbar:
+                    last_progress = 0
+                    while any(p.is_alive() for p in processes) or progress_counter.value < total_tasks:
+                        new_progress = progress_counter.value - last_progress
+                        if new_progress > 0:
+                            pbar.update(new_progress)
+                            last_progress = progress_counter.value
+
+                # 等待所有进程结束
+                for p in processes:
+                    p.join()
+                    
+
+                print("Stage4 WorkFlow4 End")
+                
+        
         print("ALL FINISHED.")
         
     except Exception as e:

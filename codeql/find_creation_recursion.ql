@@ -14,12 +14,11 @@ import semmle.code.java.dataflow.TaintTracking //TaintTracking
 
 module MyFlowConfiguration implements DataFlow::ConfigSig {
   predicate isSource(DataFlow::Node source) {
-    exists(MethodCall call, int index, AssignExpr aexpr, Expr expr, FieldAccess fa|
-      aexpr = expr.getParent*() and
-      expr = call.getArgument(index) and
-      expr.toString().matches("%DFS_NAMENODE_MAX_CORRUPT_FILE_BLOCKS_RETURNED_KEY") and
-      fa = aexpr.getDest() and
-      source.asExpr() = fa
+    exists(IfStmt ifstmt, Stmt childstmt, Expr expr|
+        ifstmt.getLocation().toString() = "placeholder" and
+        childstmt = ifstmt.getAChild() and  //getAChild 会返回所有的Child
+        expr.getAnEnclosingStmt() = childstmt and
+        source.asExpr() = expr
     ) 
   }
 
@@ -34,13 +33,8 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
   }
 
   predicate isSink(DataFlow::Node sink) {
-    // 这里可以优化成comparsionExpr
-    exists(GEExpr ge, GTExpr gt, LEExpr le, LTExpr lt, EqualityTest eqtest|
-      sink.asExpr() = ge.getRightOperand() or
-      sink.asExpr() = gt.getRightOperand() or
-      sink.asExpr() = le.getRightOperand() or
-      sink.asExpr() = lt.getRightOperand() or 
-      sink.asExpr() = eqtest.getRightOperand()
+    exists(ClassInstanceExpr classexpr|
+        sink.asExpr() = classexpr
     )
   }
 }

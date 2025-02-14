@@ -76,8 +76,8 @@ def collect_classexpr_info(root_dir, output_stage3_csv, output_stage4_csv):
     print(f"汇总结果已输出到 {output_stage3_csv}")
     
     # 将读到的'col4'转换为DataFrame, 准备写到CSV中
-    result_df = pd.DataFrame(ifstmt_list, columns=["ifstmt_location"])
-    result_df.to_csv(output_stage4_csv, index=False, encoding="utf-8")
+    result_df = pd.DataFrame(ifstmt_list, columns=False)
+    result_df.to_csv(output_stage4_csv, index=False, columns=False, encoding="utf-8")
     print(f"汇总结果已输出到 {output_stage4_csv}")
 
 

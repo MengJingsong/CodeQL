@@ -19,5 +19,5 @@ where
       )
 
 
-select ifStmt, ifStmt.getThen(), classexpr, expr, expr.getEnclosingCallable().getLocation()
+select ifStmt, ifStmt.getLocation(), classexpr, expr, expr.getEnclosingCallable().getLocation()
 
