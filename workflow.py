@@ -11,6 +11,7 @@ import multiprocessing
 from multiprocessing import Process, Queue, Value
 import gc
 import sys
+import re
 
 # 获取当前脚本文件的绝对路径
 current_file_path = os.path.abspath(__file__)
@@ -19,8 +20,8 @@ current_file_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(current_file_path)
 
 line_number_forward = 20  # 替换expr.toString().matches()
-line_number_reverse = 5 # 替换expr.getLocation.toString()
-line_number_reverse_second = 7 # 替换expr.toString()
+line_number_reverse = 17 # 替换expr.getLocation.toString()
+line_number_reverse_second = 18 # 替换expr.toString()
 line_number_stage4 = 35 # 同样替换expr.toString() 其中的placeholder
 
 output_forward_csv = os.path.join(current_dir, "csv_forward_results")
@@ -264,14 +265,14 @@ def modify_and_run_codeql_direct(workflow_file_path, line_number, old_text, new_
         print(f"An error occurred while modifying and running CodeQL: {e}")
         raise
     
-def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
-    try:
+def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, depth_num_1, depth_num_2, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
+    try:    
         # read all lines in file
         with open(workflow_file_path, 'r') as file:
             lines = file.readlines()
                 
         # modify specific line IN WORKFLOW3 先右边的变量
-        if line_number_right <= len(lines) or line_number_left <= len(lines):  
+        if line_number_right <= len(lines) or line_number_left <= len(lines):
             if old_text_right in lines[line_number_right - 1]:  
                 lines[line_number_right - 1] = lines[line_number_right - 1].replace(old_text_right, new_text_right)
             else:
@@ -280,15 +281,26 @@ def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_numbe
                 lines[line_number_left - 1] = lines[line_number_left - 1].replace(old_text_left, new_text_left)
             else:
                 print(f"'{old_text_left}' not found in line {line_number_left}.")
+            
+        # 替换 functionCallChainWrappingIf(funcWrappingIf, targetIf, 0)
+        for i, line in enumerate(lines):
+            if "functionCallChainWrappingIf(funcWrappingIf, targetIf, 0)" in line:
+                lines[i] = line.replace("functionCallChainWrappingIf(funcWrappingIf, targetIf, 0)", 
+                                        f"functionCallChainWrappingIf(funcWrappingIf, targetIf, {depth_num_1})")
+            
+            if "functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, 1)" in line:
+                lines[i] = line.replace("functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, 1)", 
+                                        f"functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, {depth_num_2})") 
         
-                
+        # 生成新的Q查询文件
         ql_file_path = os.path.join(output_ql_dir, f"{query_name}.ql")
         with open(ql_file_path, 'w') as file:
             file.writelines(lines)
         print(f"Created QL file: {ql_file_path}")
         
+        # 生成bqrs文件路径
         bqrs_file_path = os.path.join(output_bqrs_dri, f"{query_name}.bqrs")
-
+        # 运行codeql
         run_codeql(ql_file_path, bqrs_file_path, codeql_path, codeqldb_path, num_threads)
         
         return {"ql_file": ql_file_path, "bqrs_file": bqrs_file_path}
@@ -387,14 +399,14 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
     while not task_queue.empty():
         try:
             # 从队列中获取任务
-            file_name, index, sink_location, sink_variable = task_queue.get_nowait()
+            file_name, index, sink_location, sink_variable, num1, num2 = task_queue.get_nowait()
 
             # 创建结果目录
             result_folder = os.path.join(output_stage3_csv, file_name.replace(".csv", ""))
             os.makedirs(result_folder, exist_ok=True)
 
-            # 跟着ql文件走的名字
-            query_name = f"reverse_query_{file_name}_{index + 1}"
+            # 跟着ql文件走的名字, index说明替换的次序, num1和num2是递归深度的组合
+            query_name = f"pattern_1_query_{file_name}_{index + 1}_({num1}_{num2})"
 
             # 运行 CodeQL 查询
             temp_files_info = modify_and_run_codeql_twice(
@@ -405,6 +417,8 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
                 old_text_second,
                 sink_location,
                 sink_variable,
+                num1,
+                num2,
                 output_ql_dir,
                 output_bqrs_dir,
                 query_name,
@@ -414,7 +428,7 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
             )
 
             # 解码 BQRS 文件为 CSV，保存到对应文件夹
-            output_csv = os.path.join(result_folder, f"result_{index + 1}.csv")
+            output_csv = os.path.join(result_folder, f"pattern_1_result_{file_name}_{index + 1}_({num1}_{num2}).csv")
             decode_to_csv(temp_files_info['bqrs_file'], output_csv, codeql_path)
 
             # 更新进度计数器
@@ -422,7 +436,7 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
                 progress_counter.value += 1
 
         except Exception as e:
-            print(f"Error processing {file_name}, index {index}: {e}")
+            print(f"Error processing {file_name}, index {index}, ({num1}, {num2}): {e}")
             
 def process_stage4(task_queue, codeql_query_path, line_number_first, output_ql_dir, output_bqrs_dir, codeql_path, codeql_db_path, progress_counter):
     """
@@ -658,7 +672,7 @@ if __name__ == '__main__':
                 os.makedirs(output_stage3_csv, exist_ok=True)
 
                 # CodeQL 查询文件路径
-                filename_reverse = 'find_creation_in_ifstmt.ql'
+                filename_reverse = 'pattern_1.ql'
                 workflow_file = os.path.join(workflow_file_path, filename_reverse)
 
                 # 创建任务队列
@@ -668,12 +682,17 @@ if __name__ == '__main__':
                 total_tasks = 0
                 for file_name in csv_files:
                     df = pd.read_csv(os.path.join(small_test_filtered_csv_results_path, file_name))
-                    sink_locations = df['Sink_Method_Location'].tolist()
-                    sink_variables = df['Sink'].tolist()
+                    # TODO: 暂时交换下location 和variables
+                    
+                    sink_variables = df["Sink_Method_Location"].str.extract(r"/([^/]+)\.java:\d+:\d+:\d+:\d+").iloc[:, 0].tolist()     
+                    sink_locations = df['Sink'].tolist()
 
                     for index, (sink_location, sink_variable) in enumerate(zip(sink_locations,sink_variables)):
-                        task_queue.put((file_name, index, sink_location, sink_variable))
-                        total_tasks += 1
+                        # 在这里展开(0,0) 到(4,4)
+                        for num1 in range(5):
+                            for num2 in range(5):
+                                task_queue.put((file_name, index, sink_location, sink_variable, num1, num2))
+                                total_tasks += 1 # 任务数增加
 
                 print(f"Total tasks for Stage 3: {total_tasks}")
 
