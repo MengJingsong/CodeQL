@@ -17,31 +17,26 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
     exists(MethodCall call, int index, AssignExpr aexpr, Expr expr, FieldAccess fa|
       aexpr = expr.getParent*() and
       expr = call.getArgument(index) and
-      expr.toString().matches("%DFS_NAMENODE_MAX_CORRUPT_FILE_BLOCKS_RETURNED_KEY") and
+      expr.toString().matches("%DFS_NAMENODE_MAX_CORRUPT_FILE_BLOCKS_RETURNED_KEY%") and
       fa = aexpr.getDest() and
       source.asExpr() = fa
     ) 
   }
 
-  // a = b( method(parameters) )
-
-  // this.z,z
-  predicate isAdditionalFlowStep(DataFlow::Node pred, DataFlow::Node succ) {
-    exists(FieldAccess fa |
-      pred.asExpr() = fa.getQualifier() and
-      succ.asExpr() = fa and 
-      pred.getLocation().getFile() = succ.getLocation().getFile() //限定位置
+  // 跨方法来寻找this.z 和 z
+  predicate isAdditionalFlowStep(DataFlow::Node node1,DataFlow::Node node2) {
+    exists(FieldAccess fa1, FieldAccess fa2 |
+      fa1.getField() = fa2.getField() and
+      node1.asExpr() = fa1 and
+      node2.asExpr() = fa2 and
+      fa1.getEnclosingCallable().getFile() = fa2.getEnclosingCallable().getFile() // 限制范围
     )
   }
 
   predicate isSink(DataFlow::Node sink) {
-    // 这里可以优化成comparsionExpr
-    exists(GEExpr ge, GTExpr gt, LEExpr le, LTExpr lt, EqualityTest eqtest|
-      sink.asExpr() = ge.getLeftOperand() or
-      sink.asExpr() = gt.getLeftOperand() or
-      sink.asExpr() = le.getLeftOperand() or
-      sink.asExpr() = lt.getLeftOperand() or 
-      sink.asExpr() = eqtest.getLeftOperand()
+    exists(BinaryExpr bexpr, IfStmt ifstmt|
+      sink.asExpr() = bexpr.getAChildExpr() and
+      ifstmt.getCondition().getAChildExpr*() = bexpr
     )
   }
 }
@@ -54,7 +49,6 @@ from MyFlow::PathNode source, MyFlow::PathNode sink
 where MyFlow::flowPath(source, sink)
 select
 sink.getNode().asExpr().getParent(), 
-sink.getNode().asExpr().getParent().(BinaryExpr).getRightOperand(),  //看另一边的是什么
 source,
 source.getNode().asExpr().getEnclosingCallable(),
 source.getNode().getEnclosingCallable().getLocation(),

@@ -695,8 +695,8 @@ if __name__ == '__main__':
                     df = pd.read_csv(os.path.join(small_test_filtered_csv_results_path, file_name))
                     # TODO: 暂时交换下location 和variables
                     
-                    sink_variables = df["Sink_Method_Location"].str.extract(r"/([^/]+)\.java:\d+:\d+:\d+:\d+").iloc[:, 0].tolist()     
-                    sink_locations = df['Sink'].tolist()
+                    sink_variables = df["col6"].str.extract(r"/([^/]+)\.java:\d+:\d+:\d+:\d+").iloc[:, 0].tolist()     
+                    sink_locations = df['sink'].tolist()
 
                     for index, (sink_location, sink_variable) in enumerate(zip(sink_locations,sink_variables)):
                         # 在这里展开(0,0) 到(4,4)
