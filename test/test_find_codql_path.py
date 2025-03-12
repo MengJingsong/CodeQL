@@ -5,6 +5,10 @@ import shutil
 
 current_dir = os.getcwd()
 
+# 定义源文件夹和目标文件夹
+current_file_path = os.path.abspath(__file__)
+previous_file_path = os.path.dirname(os.path.dirname(current_file_path))
+
 output_forward_csv = os.path.join(current_dir, "csv_forward_results")
 output_reverse_csv = os.path.join(current_dir, "csv_reverse_results")
 output_forward_ql = os.path.join(current_dir, "ql_forward_results")
@@ -70,42 +74,53 @@ def get_codeql_path():
 
     raise FileNotFoundError("CodeQL executable not found. Please install CodeQL or specify the path manually.")
 
-def get_codeql_db_path(project_name="apache-hadoop"):
+def get_codeql_db_path(project_name="apache-hadoop", custome_db = False):
 
-    system_name = platform.system()
-    user_home = os.path.expanduser("~")  # 用户主目录
+    if not custome_db:
+        system_name = platform.system()
+        user_home = os.path.expanduser("~")  # 用户主目录
+        
+        # 不同系统的默认路径前缀
+        if system_name == "Darwin":  # macOS
+            base_path = os.path.join(user_home, "Library", "Application Support", "Code", "User", "workspaceStorage")
+        elif system_name == "Linux":
+            base_path = os.path.join(user_home, ".vscode-server", "data", "User", "workspaceStorage")
+        elif system_name == "Windows":
+            base_path = os.path.join(user_home, "AppData", "Roaming", "Code", "User", "workspaceStorage")
+        else:
+            raise RuntimeError(f"Unsupported operating system: {system_name}")
 
-    # 不同系统的默认路径前缀
-    if system_name == "Darwin":  # macOS
-        base_path = os.path.join(user_home, "Library", "Application Support", "Code", "User", "workspaceStorage")
-    elif system_name == "Linux":
-        base_path = os.path.join(user_home, ".vscode-server", "data", "User", "workspaceStorage")
-    elif system_name == "Windows":
-        base_path = os.path.join(user_home, "AppData", "Roaming", "Code", "User", "workspaceStorage")
+        # 搜索 workspaceStorage 下的所有子目录，寻找匹配的项目路径
+        if os.path.exists(base_path):
+            for subdir in os.listdir(base_path):
+                potential_path = os.path.join(base_path, subdir, "GitHub.vscode-codeql", project_name, "codeql_db")
+                if os.path.exists(potential_path):
+                    print(f"Detected CodeQL database path: {potential_path}")
+                    return potential_path
+
+        # 如果未找到路径，抛出异常或提示用户手动输入
+        raise FileNotFoundError(f"CodeQL database for project '{project_name}' not found in default locations. "
+                                "Please ensure the database exists or specify the path manually.")
     else:
-        raise RuntimeError(f"Unsupported operating system: {system_name}")
-
-    # 搜索 workspaceStorage 下的所有子目录，寻找匹配的项目路径
-    if os.path.exists(base_path):
-        for subdir in os.listdir(base_path):
-            potential_path = os.path.join(base_path, subdir, "GitHub.vscode-codeql", project_name, "codeql_db")
-            if os.path.exists(potential_path):
-                print(f"Detected CodeQL database path: {potential_path}")
-                return potential_path
-
-    # 如果未找到路径，抛出异常或提示用户手动输入
-    raise FileNotFoundError(f"CodeQL database for project '{project_name}' not found in default locations. "
-                            "Please ensure the database exists or specify the path manually.")
+        # 使用自定义数据库路径
+        custom_db_path = "/users/Yuang/hadoop_src/hadoop/hadoop-codeql-db"
+        if os.path.exists(custom_db_path):
+            print(f"Using custom CodeQL database path: {custom_db_path}")
+            return custom_db_path
+        else:
+            raise FileNotFoundError(f"Custom CodeQL database not found at {custom_db_path}. "
+                                    "Please check the path or create the database.")
+     
     
 def move_codeql_db_to_shm(codeql_db_path):
     shm_path = "/dev/shm"
     if not os.path.exists(shm_path):
         raise RuntimeError("/dev/shm does not exist. Ensure you're on a Linux system with shared memory support.")
 
-    base_name = os.path.basename(codeql_db_path)
+    #base_name = os.path.basename(codeql_db_path)
     
     for i in range(10):
-        new_name = f"{base_name}_{i}"
+        new_name = f"codeql_db_{i}"
         new_path = os.path.join(shm_path, new_name)
 
         if os.path.exists(new_path):
@@ -134,7 +149,7 @@ if __name__ == '__main__':
     # Ensure installed codeql path
     get_codeql_path()
     # Ensure installed codeql database
-    codeql_db_path = get_codeql_db_path()
+    codeql_db_path = get_codeql_db_path(custome_db=True)
     move_codeql_db_to_shm(codeql_db_path)
     print("Successful!")
     

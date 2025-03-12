@@ -69,32 +69,43 @@ def split_csv(input_csv, num_splits=10):
     
     return output_files
 
-def get_codeql_db_path(project_name="apache-hadoop"):
+def get_codeql_db_path(project_name="apache-hadoop", custome_db = False):
 
-    system_name = platform.system()
-    user_home = os.path.expanduser("~")  # 用户主目录
+    if not custome_db:
+        system_name = platform.system()
+        user_home = os.path.expanduser("~")  # 用户主目录
+        
+        # 不同系统的默认路径前缀
+        if system_name == "Darwin":  # macOS
+            base_path = os.path.join(user_home, "Library", "Application Support", "Code", "User", "workspaceStorage")
+        elif system_name == "Linux":
+            base_path = os.path.join(user_home, ".vscode-server", "data", "User", "workspaceStorage")
+        elif system_name == "Windows":
+            base_path = os.path.join(user_home, "AppData", "Roaming", "Code", "User", "workspaceStorage")
+        else:
+            raise RuntimeError(f"Unsupported operating system: {system_name}")
 
-    # 不同系统的默认路径前缀
-    if system_name == "Darwin":  # macOS
-        base_path = os.path.join(user_home, "Library", "Application Support", "Code", "User", "workspaceStorage")
-    elif system_name == "Linux":
-        base_path = os.path.join(user_home, ".vscode-server", "data", "User", "workspaceStorage")
-    elif system_name == "Windows":
-        base_path = os.path.join(user_home, "AppData", "Roaming", "Code", "User", "workspaceStorage")
+        # 搜索 workspaceStorage 下的所有子目录，寻找匹配的项目路径
+        if os.path.exists(base_path):
+            for subdir in os.listdir(base_path):
+                potential_path = os.path.join(base_path, subdir, "GitHub.vscode-codeql", project_name, "codeql_db")
+                if os.path.exists(potential_path):
+                    print(f"Detected CodeQL database path: {potential_path}")
+                    return potential_path
+
+        # 如果未找到路径，抛出异常或提示用户手动输入
+        raise FileNotFoundError(f"CodeQL database for project '{project_name}' not found in default locations. "
+                                "Please ensure the database exists or specify the path manually.")
     else:
-        raise RuntimeError(f"Unsupported operating system: {system_name}")
-
-    # 搜索 workspaceStorage 下的所有子目录，寻找匹配的项目路径
-    if os.path.exists(base_path):
-        for subdir in os.listdir(base_path):
-            potential_path = os.path.join(base_path, subdir, "GitHub.vscode-codeql", project_name, "codeql_db")
-            if os.path.exists(potential_path):
-                print(f"Detected CodeQL database path: {potential_path}")
-                return potential_path
-
-    # 如果未找到路径，抛出异常或提示用户手动输入
-    raise FileNotFoundError(f"CodeQL database for project '{project_name}' not found in default locations. "
-                            "Please ensure the database exists or specify the path manually.")
+        # 使用自定义数据库路径
+        custom_db_path = os.path.join(os.getcwd(), "hadoop-codeql-db")  # 使用当前工作目录
+        if os.path.exists(custom_db_path):
+            print(f"Using custom CodeQL database path: {custom_db_path}")
+            return custom_db_path
+        else:
+            raise FileNotFoundError(f"Custom CodeQL database not found at {custom_db_path}. "
+                                    "Please check the path or create the database.")
+        
 
 # 自动推导 CodeQL 的安装路径
 def get_codeql_path():
@@ -605,7 +616,7 @@ if __name__ == '__main__':
             start_index = 1
             
             # Use Workflow 2 (workflow_file_path)
-            filename = 'find_comparison.ql'
+            filename = 'find_comparison_left.ql'
             workflow_file = os.path.join(workflow_file_path, filename)
 
             for i, (split_file, db_path) in enumerate(zip(split_files, codeql_db_paths)):

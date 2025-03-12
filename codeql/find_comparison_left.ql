@@ -26,12 +26,11 @@ module MyFlowConfiguration implements DataFlow::ConfigSig {
   // a = b( method(parameters) )
 
   // this.z,z
-  predicate isAdditionalFlowStep(DataFlow::Node node1,DataFlow::Node node2) {
-    exists(FieldAccess fa1, FieldAccess fa2 |
-      fa1.getField() = fa2.getField() and
-      node1.asExpr() = fa1 and
-      node2.asExpr() = fa2 and
-      fa1.getFile() = fa2.getFile() // 限制范围
+  predicate isAdditionalFlowStep(DataFlow::Node pred, DataFlow::Node succ) {
+    exists(FieldAccess fa |
+      pred.asExpr() = fa.getQualifier() and
+      succ.asExpr() = fa and 
+      pred.getLocation().getFile() = succ.getLocation().getFile() //限定位置
     )
   }
 
@@ -55,7 +54,7 @@ from MyFlow::PathNode source, MyFlow::PathNode sink
 where MyFlow::flowPath(source, sink)
 select
 sink.getNode().asExpr().getParent(), 
-sink.getNode().asExpr().getParent().(BinaryExpr).getLeftOperand(), 
+sink.getNode().asExpr().getParent().(BinaryExpr).getRightOperand(),  //看另一边的是什么
 source,
 source.getNode().asExpr().getEnclosingCallable(),
 source.getNode().getEnclosingCallable().getLocation(),
