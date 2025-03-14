@@ -7,8 +7,9 @@ class TargetIfStmtWithReturn extends IfStmt {
             this.getElse() = returnStmt.getParent() or
             this.getThen() = returnStmt.getParent()
         ) and
-        this.getCondition().getAChildExpr*().toString().matches("%maxFsObjects%") and
-        this.getFile().toString().matches("FSNamesystem%")
+        this.getCondition().getAChildExpr*().toString().matches("%placeholder%") and
+        this.getFile().toString().matches("%cachedDfsUsedCheckTime%") and
+        this.getLocation().getStartLine() = 9999
     }
 }
 
