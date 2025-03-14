@@ -20,8 +20,8 @@ current_file_path = os.path.abspath(__file__)
 current_dir = os.path.dirname(current_file_path)
 
 line_number_forward = 20  # 替换expr.toString().matches()
-line_number_reverse = 17 # 替换expr.getLocation.toString()
-line_number_reverse_second = 18 # 替换expr.toString()
+line_number_reverse = 10 # 替换expr.getLocation.toString()
+line_number_reverse_second = 11 # 替换expr.toString()
 line_number_stage4 = 35 # 同样替换expr.toString() 其中的placeholder
 
 output_forward_csv = os.path.join(current_dir, "csv_forward_results")
@@ -51,6 +51,20 @@ old_text_first_stage4 = "placeholder"
 
 import os
 import platform
+
+# 处理 sink，提取变量名或运算符
+def extract_sink_value(s):
+    # 先检查是否包含运算符
+    operator_match = re.search(r"(==|!=|<=|>=|<|>|\|\||&&)", s)
+    if operator_match:
+        return operator_match.group(1)  # 返回匹配到的运算符
+    
+    # 如果没有运算符，检查是否是一个单独的变量（即不包含特殊符号）
+    if re.match(r"^\w+$", s):  
+        return s  # 直接返回变量名
+    
+    # 其他情况，保持原始值
+    return s
 
 
 # 用来split_csv
@@ -276,7 +290,7 @@ def modify_and_run_codeql_direct(workflow_file_path, line_number, old_text, new_
         print(f"An error occurred while modifying and running CodeQL: {e}")
         raise
     
-def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, depth_num_1, depth_num_2, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
+def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_number_right, old_text_left, old_text_right, new_text_left, new_text_right, start_line, depth_num_1, depth_num_2, output_ql_dir, output_bqrs_dri, query_name, codeql_path, codeqldb_path, num_threads):
     try:    
         # read all lines in file
         with open(workflow_file_path, 'r') as file:
@@ -295,13 +309,27 @@ def modify_and_run_codeql_twice(workflow_file_path, line_number_left, line_numbe
             
         # 替换 functionCallChainWrappingIf(funcWrappingIf, targetIf, 0)
         for i, line in enumerate(lines):
-            if "functionCallChainWrappingIf(funcWrappingIf, targetIf, 0)" in line:
-                lines[i] = line.replace("functionCallChainWrappingIf(funcWrappingIf, targetIf, 0)", 
-                                        f"functionCallChainWrappingIf(funcWrappingIf, targetIf, {depth_num_1})")
             
-            if "functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, 1)" in line:
-                lines[i] = line.replace("functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, 1)", 
-                                        f"functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, {depth_num_2})") 
+            # 如果num2 不为 -1的话
+            if depth_num_2 != -1:
+                if "functionCallChainWrappingIf(funcWrappingIf, targetIf, 0)" in line:
+                    lines[i] = line.replace("functionCallChainWrappingIf(funcWrappingIf, targetIf, 0)", 
+                                            f"functionCallChainWrappingIf(funcWrappingIf, targetIf, {depth_num_1})")
+                
+                if "functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, 1)" in line:
+                    lines[i] = line.replace("functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, 1)", 
+                                            f"functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, {depth_num_2})") 
+            
+            if depth_num_2 == -1:
+                # 如果num2 为-1的话
+                if "functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, 4)" in line:
+                    lines[i] = line.replace("functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, 4)", 
+                                            f"functionCallChainWrappingINodeFileCreation(funcWrappingINodeFileCreation, newObj, {depth_num_1})") 
+                
+                if "9999" in line:
+                    lines[i] = line.replace("9999", str(start_line))
+            
+            
         
         # 生成新的Q查询文件
         ql_file_path = os.path.join(output_ql_dir, f"{query_name}.ql")
@@ -410,14 +438,14 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
     while not task_queue.empty():
         try:
             # 从队列中获取任务
-            file_name, index, sink_location, sink_variable, num1, num2 = task_queue.get_nowait()
+            file_name, index, sink_location, sink_variable, start_line, num1, num2 = task_queue.get_nowait()
 
             # 创建结果目录
             result_folder = os.path.join(output_stage3_csv, file_name.replace(".csv", ""))
             os.makedirs(result_folder, exist_ok=True)
 
             # 跟着ql文件走的名字, index说明替换的次序, num1和num2是递归深度的组合
-            query_name = f"pattern_1_query_{file_name}_{index + 1}_({num1}_{num2})"
+            query_name = f"pattern_2_query_{file_name}_{index + 1}_({num1}_{num2})"
 
             # 运行 CodeQL 查询
             temp_files_info = modify_and_run_codeql_twice(
@@ -428,6 +456,7 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
                 old_text_second,
                 sink_location,
                 sink_variable,
+                start_line,
                 num1,
                 num2,
                 output_ql_dir,
@@ -439,7 +468,7 @@ def process_stage3(task_queue, codeql_query_path, line_number_first, line_number
             )
 
             # 解码 BQRS 文件为 CSV，保存到对应文件夹
-            output_csv = os.path.join(result_folder, f"pattern_1_result_{file_name}_{index + 1}_({num1}_{num2}).csv")
+            output_csv = os.path.join(result_folder, f"pattern_2_result_{file_name}_{index + 1}_({num1}_{num2}).csv")
             decode_to_csv(temp_files_info['bqrs_file'], output_csv, codeql_path)
 
             # 更新进度计数器
@@ -664,6 +693,15 @@ if __name__ == '__main__':
         # 获取命令行参数（第一个是脚本名）
         if len(sys.argv) > 1:
             command = sys.argv[1]
+            
+            # 如果有第二个参数，则作为模式参数
+            if len(sys.argv) > 2:
+                pattern_type = sys.argv[2]  # 获取 "pattern1" 或 "pattern2"
+            else:
+                pattern_type = "pattern1"  # 默认执行 pattern1
+                
+            # 打出现在的pattern
+            print(f"Command: {command}, Pattern: {pattern_type}")
 
             # 根据命令进行判断
             if command == 'start':
@@ -683,7 +721,7 @@ if __name__ == '__main__':
                 os.makedirs(output_stage3_csv, exist_ok=True)
 
                 # CodeQL 查询文件路径
-                filename_reverse = 'pattern_1.ql'
+                filename_reverse = 'pattern_2.ql'
                 workflow_file = os.path.join(workflow_file_path, filename_reverse)
 
                 # 创建任务队列
@@ -695,17 +733,37 @@ if __name__ == '__main__':
                     df = pd.read_csv(os.path.join(small_test_filtered_csv_results_path, file_name))
                     # TODO: 暂时交换下location 和variables
                     
-                    sink_variables = df["col6"].str.extract(r"/([^/]+)\.java:\d+:\d+:\d+:\d+").iloc[:, 0].tolist()     
-                    sink_locations = df['sink'].tolist()
+                    # 正则表达式提取 Java 文件名和开始行号
+                    df[["Extracted_File_Name", "Start_Line"]] = df["col6"].str.extract(r"/([^/]+)\.java:(\d+):\d+:\d+:\d+")
 
-                    for index, (sink_location, sink_variable) in enumerate(zip(sink_locations,sink_variables)):
+                    # 将 Start_Line 转换为整数类型
+                    df["Start_Line"] = df["Start_Line"].astype(int)
+                    
+                    
+                    df["Processed_Sink"] = df["sink"].apply(extract_sink_value)
+                    
+                    sink_variables = df["Extracted_File_Name"].tolist() # 具体的名字
+                    start_lines = df["Start_Line"].tolist() # 具体的开始行
+                    sink_locations = df['Processed_Sink'].tolist() # 具体的变量名
+
+                    for index, (sink_location, sink_variable, start_line) in enumerate(zip(sink_locations,sink_variables, start_lines)):
                         # 在这里展开(0,0) 到(4,4)
-                        for num1 in range(5):
-                            for num2 in range(5):
-                                task_queue.put((file_name, index, sink_location, sink_variable, num1, num2))
+                        
+                        if pattern_type == "pattern1":
+                            # 如果这里是"start pattern1" 就接收, 2个num
+                            for num1 in range(5):
+                                for num2 in range(5):
+                                    task_queue.put((file_name, index, sink_location, sink_variable, start_line, num1, num2))
+                                    total_tasks += 1 # 任务数增加
+                        
+                        elif pattern_type == "pattern2":
+                            # 如果这里是"start pattern2" 就接收 num2 = -1
+                            for num1 in range(5):
+                                task_queue.put((file_name, index, sink_location, sink_variable, start_line, num1, -1))
                                 total_tasks += 1 # 任务数增加
-
-                print(f"Total tasks for Stage 3: {total_tasks}")
+                            
+                            
+                print(f"Total tasks for {pattern_type}: {total_tasks}")
 
                 # 共享进度计数器
                 manager = multiprocessing.Manager()
